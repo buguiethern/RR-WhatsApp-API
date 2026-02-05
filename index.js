@@ -14,7 +14,6 @@ const ipRangeCheck = require('ip-range-check');
 const app = express();
 const port = Number(process.env.PORT || 3001);
 
-// ✅ Confie em proxy só quando faz sentido (reverse proxy / docker)
 app.set('trust proxy', 'loopback, linklocal, uniquelocal');
 
 const allowedIPs = (process.env.ALLOWED_IPS || '127.0.0.1,::1')
@@ -43,10 +42,19 @@ app.use((req, res, next) => {
   return res.status(403).send('Acesso negado.');
 });
 
+// ✅ ORDEM IMPORTA: fileUpload precisa vir ANTES dos parsers se você quer multipart sempre preenchido.
+app.use(fileUpload({
+  createParentPath: true,
+  limits: { fileSize: 25 * 1024 * 1024 },
+  abortOnLimit: true,
+  useTempFiles: false,
+}));
+
+// parsers (para rotas json/urlencoded normais)
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json({ limit: '25mb' }));
+
 app.use(express.static('public'));
-app.use(fileUpload());
 
 // ===== WebSocket (QR e status)
 const wsPort = Number(process.env.WS_PORT || 8080);
@@ -78,7 +86,6 @@ wss.on('connection', function connection(ws, req) {
 
   console.log(`Cliente conectado via WebSocket: ${cleanedIP}`);
 
-  // manda o último estado atual
   if (waState.qrCodeData) ws.send(JSON.stringify({ type: 'qr', data: waState.qrCodeData }));
   else ws.send(JSON.stringify({ type: 'status', authenticated: waState.authenticated, state: waState.lastKnownState }));
 });
@@ -104,25 +111,18 @@ const STARTUP_MIN_DELAY_MS = Number(process.env.WA_STARTUP_DELAY_MS || 1500);
 const RESTART_BASE_DELAY_MS = Number(process.env.WA_RESTART_BASE_DELAY_MS || 2500);
 const RESTART_MAX_DELAY_MS = Number(process.env.WA_RESTART_MAX_DELAY_MS || 60000);
 const STATE_WATCHDOG_INTERVAL_MS = Number(process.env.WA_WATCHDOG_INTERVAL_MS || 15000);
-const STATE_STUCK_TIMEOUT_MS = Number(process.env.WA_STUCK_TIMEOUT_MS || 90000); // se ficar muito tempo sem state ok
+const STATE_STUCK_TIMEOUT_MS = Number(process.env.WA_STUCK_TIMEOUT_MS || 90000);
 const DESTROY_TIMEOUT_MS = Number(process.env.WA_DESTROY_TIMEOUT_MS || 12000);
 const LOGOUT_TIMEOUT_MS = Number(process.env.WA_LOGOUT_TIMEOUT_MS || 12000);
 
-// fila simples pra evitar concorrência de sendMessage
 let sendChain = Promise.resolve();
 function enqueueSend(fn) {
   sendChain = sendChain.then(fn).catch(() => {});
   return sendChain;
 }
 
-function sleep(ms) {
-  return new Promise(r => setTimeout(r, ms));
-}
-
-function clamp(n, min, max) {
-  return Math.max(min, Math.min(max, n));
-}
-
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+function clamp(n, min, max) { return Math.max(min, Math.min(max, n)); }
 function backoffDelay(attempt) {
   const base = RESTART_BASE_DELAY_MS;
   const exp = base * Math.pow(2, attempt);
@@ -152,8 +152,6 @@ function safeRmDir(dir) {
 
 function getPuppeteerOptions() {
   const executablePath = process.env.CHROME_PATH || process.env.PUPPETEER_EXECUTABLE_PATH || undefined;
-
-  // args mais “docker-friendly”
   const args = [
     '--no-sandbox',
     '--disable-setuid-sandbox',
@@ -170,27 +168,17 @@ function getPuppeteerOptions() {
     '--metrics-recording-only',
     '--mute-audio',
   ];
-
-  // em alguns VPS, ajuda
   if ((process.env.WA_SINGLE_PROCESS || '').toLowerCase() === 'true') args.push('--single-process');
-
-  return {
-    headless: true,
-    args,
-    defaultViewport: null,
-    timeout: 0,
-    executablePath,
-  };
+  return { headless: true, args, defaultViewport: null, timeout: 0, executablePath };
 }
 
 function buildClient() {
-  const client = new Client({
+  return new Client({
     authStrategy: new LocalAuth({ dataPath: SESSION_DIR }),
     puppeteer: getPuppeteerOptions(),
     takeoverOnConflict: true,
     takeoverTimeoutMs: 3000,
   });
-  return client;
 }
 
 function setState(nextState) {
@@ -198,9 +186,7 @@ function setState(nextState) {
   broadcast({ type: 'state', state: nextState, authenticated: waState.authenticated });
 }
 
-function clearQr() {
-  waState.qrCodeData = null;
-}
+function clearQr() { waState.qrCodeData = null; }
 
 async function stopClient({ doLogout = false, wipeSession = false, reason = 'stop' } = {}) {
   if (waState.isStopping) return;
@@ -215,24 +201,13 @@ async function stopClient({ doLogout = false, wipeSession = false, reason = 'sto
     broadcast({ type: 'stopping', reason, wipeSession });
 
     if (c) {
-      try {
-        c.removeAllListeners();
-      } catch {}
-
+      try { c.removeAllListeners(); } catch {}
       if (doLogout) {
-        try {
-          await withTimeout(c.logout(), LOGOUT_TIMEOUT_MS, 'client.logout');
-        } catch (e) {
-          console.log('[WARN] logout falhou:', e?.message || e);
-        }
+        try { await withTimeout(c.logout(), LOGOUT_TIMEOUT_MS, 'client.logout'); }
+        catch (e) { console.log('[WARN] logout falhou:', e?.message || e); }
       }
-
-      try {
-        await withTimeout(c.destroy(), DESTROY_TIMEOUT_MS, 'client.destroy');
-      } catch (e) {
-        // há casos em que destroy fica preso depois de browser disconnect -> timeout aqui evita travar processo
-        console.log('[WARN] destroy falhou/timeout:', e?.message || e);
-      }
+      try { await withTimeout(c.destroy(), DESTROY_TIMEOUT_MS, 'client.destroy'); }
+      catch (e) { console.log('[WARN] destroy falhou/timeout:', e?.message || e); }
     }
 
     if (wipeSession) safeRmDir(SESSION_DIR);
@@ -251,7 +226,6 @@ async function startClient({ reason = 'start' } = {}) {
   try {
     setState('STARTING');
     broadcast({ type: 'starting', reason });
-
     await sleep(STARTUP_MIN_DELAY_MS);
 
     const c = buildClient();
@@ -259,10 +233,8 @@ async function startClient({ reason = 'start' } = {}) {
 
     registerClientEvents(c);
 
-    // initialize pode lançar
-    try {
-      c.initialize();
-    } catch (e) {
+    try { c.initialize(); }
+    catch (e) {
       waState.lastErrorAt = Date.now();
       console.log('[ERR] initialize lançou erro:', e?.message || e);
       throw e;
@@ -284,9 +256,7 @@ async function restartClient({ reason = 'restart', wipeSession = false, doLogout
     broadcast({ type: 'restart_scheduled', reason, wipeSession, doLogout, wait });
 
     await stopClient({ reason, wipeSession, doLogout });
-
     await sleep(wait);
-
     await startClient({ reason });
   } finally {
     waState.isRestarting = false;
@@ -306,15 +276,12 @@ function registerClientEvents(client) {
 
   client.on('authenticated', () => {
     console.log('[WA] authenticated (sessão ok).');
-    // não marque como “ready” aqui; só quando estado estiver CONNECTED e/ou ready disparar
     broadcast({ type: 'authenticated' });
   });
 
   client.on('ready', async () => {
     console.log('[WA] ready!');
     clearQr();
-
-    // respiro
     await sleep(1200);
 
     let state = 'UNKNOWN';
@@ -334,7 +301,6 @@ function registerClientEvents(client) {
   client.on('change_state', (state) => {
     console.log('[WA] change_state:', state);
     waState.lastKnownState = state;
-    // CONNECTED = considerado “autenticado” para envio
     if (state === 'CONNECTED') waState.authenticated = true;
     if (state === 'UNPAIRED' || state === 'UNLAUNCHED') waState.authenticated = false;
     broadcast({ type: 'change_state', state, authenticated: waState.authenticated });
@@ -352,8 +318,6 @@ function registerClientEvents(client) {
     clearQr();
     setState('AUTH_FAILURE');
     broadcast({ type: 'auth_failure', msg });
-
-    // auth_failure geralmente pede limpeza de sessão
     await restartClient({ reason: 'auth_failure', wipeSession: true, doLogout: false });
   });
 
@@ -365,13 +329,11 @@ function registerClientEvents(client) {
     setState('DISCONNECTED');
     broadcast({ type: 'disconnected', reason });
 
-    // alguns reasons podem ser resolvidos sem wipe, outros pedem wipe
     const r = String(reason || '').toLowerCase();
     const shouldWipe = r.includes('logout') || r.includes('unpaired') || r.includes('auth') || r.includes('banned');
     await restartClient({ reason: `disconnected:${reason}`, wipeSession: shouldWipe, doLogout: false });
   });
 
-  // ✅ Comando de teste: mande "!ping"
   client.on('message', async (msg) => {
     try {
       if (msg.type === 'chat' && (msg.body || '').toLowerCase().trim() === '!ping') {
@@ -382,7 +344,6 @@ function registerClientEvents(client) {
     }
   });
 
-  // ✅ Recusa chamadas
   client.on('call', async (call) => {
     try {
       console.log(`[WA] chamada de ${call.from} (video=${call.isVideo})`);
@@ -395,7 +356,6 @@ function registerClientEvents(client) {
   });
 }
 
-// Watchdog: se getState começar a falhar ou ficar “travado”, reinicia
 let watchdogTimer = null;
 async function watchdogTick() {
   if (!waState.client) return;
@@ -428,9 +388,7 @@ async function watchdogTick() {
 
 function startWatchdog() {
   if (watchdogTimer) clearInterval(watchdogTimer);
-  watchdogTimer = setInterval(() => {
-    watchdogTick().catch(() => {});
-  }, STATE_WATCHDOG_INTERVAL_MS);
+  watchdogTimer = setInterval(() => { watchdogTick().catch(() => {}); }, STATE_WATCHDOG_INTERVAL_MS);
 }
 
 function stopWatchdog() {
@@ -438,7 +396,6 @@ function stopWatchdog() {
   watchdogTimer = null;
 }
 
-// init WA
 (async () => {
   startWatchdog();
   await startClient({ reason: 'boot' });
@@ -491,9 +448,7 @@ app.get('/api/status', async (req, res) => {
     if (!waState.client) return res.json({ status: 'disconnected' });
 
     let state = waState.lastKnownState || 'UNKNOWN';
-    try {
-      state = await waState.client.getState();
-    } catch {}
+    try { state = await waState.client.getState(); } catch {}
 
     const number = waState.client?.info?.wid?.user || null;
 
@@ -508,7 +463,6 @@ app.get('/api/status', async (req, res) => {
   }
 });
 
-// 🔥 Desconectar (sem wipe) e recriar
 app.get('/api/disconnect', async (req, res) => {
   try {
     broadcast({ type: 'manual_disconnect' });
@@ -520,7 +474,6 @@ app.get('/api/disconnect', async (req, res) => {
   }
 });
 
-// 🔥 Desconectar e limpar sessão (força novo QR)
 app.get('/api/reset', async (req, res) => {
   try {
     broadcast({ type: 'manual_reset' });
@@ -535,15 +488,9 @@ app.get('/api/reset', async (req, res) => {
 async function assertConnectedOrThrow() {
   const c = waState.client;
   if (!c) throw new Error('Cliente não inicializado.');
-
-  // getState pode falhar quando puppeteer morreu
   const st = await c.getState();
   if (st !== 'CONNECTED') throw new Error(`Cliente não conectado (state=${st}).`);
-
-  if (!waState.authenticated) {
-    // normaliza
-    waState.authenticated = true;
-  }
+  if (!waState.authenticated) waState.authenticated = true;
 }
 
 const sendMessageWithTimeout = async (chatId, message, file, timeout = 25000) => {
@@ -598,12 +545,9 @@ function normalizeRecipientToChatId(raw) {
 
   if (/^\+?\d+$/.test(recipientTrimmed)) {
     let number = recipientTrimmed.replace(/\D/g, '');
-
-    // remove nono dígito (BR) se for 55 + DDD + 9xxxxxxxx (13)
     if (number.startsWith('55') && number.length === 13) {
       number = number.slice(0, 4) + number.slice(5);
     }
-
     return number + '@c.us';
   }
 
@@ -612,37 +556,43 @@ function normalizeRecipientToChatId(raw) {
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// funcao para formatar telefones brasileiros automaticamente
 function formatPhoneNumberBrazil(phone) {
   if (!phone) return '';
-
-  // remove todos os caracteres nao numericos
   let cleanPhone = phone.replace(/\D/g, '');
-
-  // se comecar com +55, remove
   if (cleanPhone.startsWith('55') && cleanPhone.length > 2) {
     cleanPhone = cleanPhone.substring(2);
   }
-
-  // adiciona +55 no inicio
-  if (!phone.startsWith('+')) {
-    cleanPhone = '55' + cleanPhone;
-  } else {
-    cleanPhone = cleanPhone;
-  }
-
-  // remove 9o digito se for cel (formato brasileiro): 55 + DDD + 9xxxxxxxx = 13 digitos total
-  // 55 + DDD + 8xxxxxxxx = 12 digitos total
+  cleanPhone = '55' + cleanPhone;
   if (cleanPhone.length === 13 && cleanPhone.substring(0, 2) === '55') {
-    // remove o 9o digito (9xxxxxxxx se torna 8xxxxxxxx)
     const ddd = cleanPhone.substring(2, 4);
     const numero = cleanPhone.substring(4);
     if (numero.length === 9 && numero.startsWith('9')) {
       cleanPhone = '55' + ddd + numero.substring(1);
     }
   }
-
   return cleanPhone;
+}
+
+// ✅ parse robusto para recipients vindo do hidden JSON
+function parseRecipientsAny(input) {
+  if (input == null) return [];
+
+  // se já for array
+  if (Array.isArray(input)) {
+    return input.map(x => String(x).trim()).filter(Boolean);
+  }
+
+  const s = String(input).trim();
+  if (!s) return [];
+
+  // tenta JSON
+  try {
+    const j = JSON.parse(s);
+    if (Array.isArray(j)) return j.map(x => String(x).trim()).filter(Boolean);
+  } catch {}
+
+  // fallback CSV
+  return s.split(',').map(x => x.trim()).filter(Boolean);
 }
 
 app.post('/api/send', async (req, res) => {
@@ -650,29 +600,29 @@ app.post('/api/send', async (req, res) => {
   console.log(`[${startTime.toISOString()}] [HTTP] /api/send - Iniciando envio`);
 
   try {
-    const { recipients, message, delay: delaySec = 1.2, country = 'BR' } = req.body;
-    const file = req.files ? req.files.file : null;
+    const body = req.body || {};
+    const recipientsRaw = body.recipients;
+    const message = body.message;
+    const delaySec = body.delay ?? 1.2;
+    const country = body.country ?? 'BR';
+
+    const file = req.files?.file || null;
 
     console.log(`[${new Date().toISOString()}] [VALIDATION] Validando campos obrigatórios`);
-    if (!recipients || !message) {
-      console.log(`[${new Date().toISOString()}] [VALIDATION] Campos obrigatórios faltando: recipients=${!!recipients}, message=${!!message}`);
+    if (!recipientsRaw || !String(message || '').trim()) {
+      console.log(`[${new Date().toISOString()}] [VALIDATION] Campos faltando recipients/message`);
       return res.status(400).json({ status: 'error', message: 'Campos obrigatórios: recipients, message' });
     }
 
-    console.log(`[${new Date().toISOString()}] [AUTH] Verificando conectividade`);
     await assertConnectedOrThrow();
 
-    // processa lista de recipients (agora pode ser array ou string separada)
-    let recipientList = [];
-    if (Array.isArray(recipients)) {
-      recipientList = recipients.map(r => String(r).trim()).filter(Boolean);
-    } else {
-      recipientList = String(recipients).split(',').map(s => s.trim()).filter(Boolean);
-    }
-
+    let recipientList = parseRecipientsAny(recipientsRaw);
     console.log(`[${new Date().toISOString()}] [PARSING] Processando ${recipientList.length} destinatários`);
 
-    // formata telefones se for Brasil
+    if (recipientList.length === 0) {
+      return res.status(400).json({ status: 'error', message: 'Lista de destinatários vazia.' });
+    }
+
     if (country === 'BR') {
       recipientList = recipientList.map(recipient => {
         const formatted = formatPhoneNumberBrazil(recipient);
@@ -681,16 +631,12 @@ app.post('/api/send', async (req, res) => {
       });
     }
 
-    const delayMs = Math.max(0, Math.min(Number(delaySec) * 1000, 60000)); // 0-60s
-    console.log(`[${new Date().toISOString()}] [CONFIG] Delay entre mensagens: ${delayMs}ms`);
+    const delayMs = Math.max(0, Math.min(Number(delaySec) * 1000, 60000));
+    console.log(`[${new Date().toISOString()}] [CONFIG] Delay: ${delayMs}ms`);
 
-    // evita buscar chats repetidamente se tiver grupo
     let chatsCache = null;
     async function getChatsCached() {
-      if (!chatsCache) {
-        console.log(`[${new Date().toISOString()}] [CACHE] Buscando lista de chats`);
-        chatsCache = await waState.client.getChats();
-      }
+      if (!chatsCache) chatsCache = await waState.client.getChats();
       return chatsCache;
     }
 
@@ -698,86 +644,76 @@ app.post('/api/send', async (req, res) => {
     let errorCount = 0;
     const errors = [];
 
-    // broadcast progresso inicial
     broadcast({ type: 'send_progress', total: recipientList.length, current: 0, step: 'starting' });
 
-    // enfileira para não disparar concorrência
     await enqueueSend(async () => {
-      console.log(`[${new Date().toISOString()}] [QUEUE] Enfileirado envio para ${recipientList.length} destinatários`);
       broadcast({ type: 'send_progress', total: recipientList.length, current: 0, step: 'sending' });
 
       for (let i = 0; i < recipientList.length; i++) {
         const recipient = recipientList[i];
         const progressCurrent = i + 1;
 
-        console.log(`[${new Date().toISOString()}] [SEND] [${progressCurrent}/${recipientList.length}] Iniciando envio para: ${recipient}`);
-        broadcast({ type: 'send_progress', total: recipientList.length, current: progressCurrent, recipient: recipient });
+        console.log(`[${new Date().toISOString()}] [SEND] [${progressCurrent}/${recipientList.length}] -> ${recipient}`);
+        broadcast({ type: 'send_progress', total: recipientList.length, current: progressCurrent, recipient });
 
         try {
           const parsed = normalizeRecipientToChatId(recipient);
           if (!parsed) {
-            console.log(`[${new Date().toISOString()}] [SEND] [${progressCurrent}] Destinatário inválido pulado: ${recipient}`);
             errorCount++;
             errors.push({ recipient, error: 'Destinatário inválido' });
             continue;
           }
 
           if (typeof parsed === 'string') {
-            console.log(`[${new Date().toISOString()}] [SEND] [${progressCurrent}] Enviando chatId: ${parsed}`);
             await sendMessageWithTimeout(parsed, message, file);
-            console.log(`[${new Date().toISOString()}] [SEND] [${progressCurrent}] ✅ Sucesso: ${recipient} (${parsed})`);
             successCount++;
           } else {
-            console.log(`[${new Date().toISOString()}] [SEND] [${progressCurrent}] Buscando grupo: ${parsed.groupName}`);
             const chats = await getChatsCached();
             const group = chats.find(chat => chat.isGroup && chat.name === parsed.groupName);
             if (!group) {
-              console.log(`[${new Date().toISOString()}] [SEND] [${progressCurrent}] ⚠️ Grupo não encontrado: ${parsed.groupName}`);
               errorCount++;
               errors.push({ recipient, error: `Grupo não encontrado: ${parsed.groupName}` });
             } else {
-              console.log(`[${new Date().toISOString()}] [SEND] [${progressCurrent}] Enviando groupId: ${group.id._serialized}`);
               await sendMessageWithTimeout(group.id._serialized, message, file);
-              console.log(`[${new Date().toISOString()}] [SEND] [${progressCurrent}] ✅ Sucesso grupo: ${parsed.groupName} (${group.id._serialized})`);
               successCount++;
             }
           }
 
-          // delay entre mensagens, exceto na última
           if (i < recipientList.length - 1 && delayMs > 0) {
-            console.log(`[${new Date().toISOString()}] [DELAY] Pausando ${delayMs}ms antes do próximo`);
             await delay(delayMs);
           }
-
         } catch (sendError) {
           const errorMsg = sendError?.message || String(sendError);
-          console.log(`[${new Date().toISOString()}] [SEND] [${progressCurrent}] ❌ Erro ao enviar para ${recipient}: ${errorMsg}`);
           errorCount++;
           errors.push({ recipient, error: errorMsg });
         }
       }
 
-      broadcast({ type: 'send_progress', total: recipientList.length, current: recipientList.length, step: 'completed', success: successCount, errors: errorCount });
+      broadcast({
+        type: 'send_progress',
+        total: recipientList.length,
+        current: recipientList.length,
+        step: 'completed',
+        success: successCount,
+        errors: errorCount
+      });
     });
 
     const endTime = new Date();
     const duration = endTime - startTime;
-    console.log(`[${endTime.toISOString()}] [COMPLETED] Envio finalizado. Sucesso: ${successCount}, Erros: ${errorCount}. Tempo total: ${duration}ms`);
+    console.log(`[${endTime.toISOString()}] [COMPLETED] Sucesso: ${successCount}, Erros: ${errorCount}, Tempo: ${duration}ms`);
 
     return res.status(200).json({
       status: 'success',
       message: `Mensagens enviadas! Sucesso: ${successCount}, Erros: ${errorCount}`,
-      stats: { success: successCount, errors: errorCount, duration: duration },
-      errors: errors.slice(0, 10) // máximo 10 erros no response
+      stats: { success: successCount, errors: errorCount, duration },
+      errors: errors.slice(0, 10)
     });
 
   } catch (err) {
-    const endTime = new Date();
-    const duration = endTime - startTime;
     const msg = err?.message || String(err);
-    console.log(`[${endTime.toISOString()}] [ERROR] Erro geral no /api/send após ${duration}ms:`, msg);
+    console.log('[ERROR] /api/send:', msg);
 
-    // se falhou por "page closed / browser disconnected", tenta restart sem wipe
     const low = msg.toLowerCase();
     if (low.includes('session closed') || low.includes('target closed') || low.includes('browser') || low.includes('protocol error')) {
       restartClient({ reason: 'send_failure_browser', wipeSession: false, doLogout: false }).catch(() => {});
@@ -789,29 +725,20 @@ app.post('/api/send', async (req, res) => {
 
 app.get('/api/sendMessage/:recipient/:message', async (req, res) => {
   try {
-    console.log('[HTTP] /api/sendMessage');
-
     await assertConnectedOrThrow();
 
     const recipientParam = (req.params.recipient || '').trim();
     const message = decodeURIComponent(req.params.message || '');
 
-    if (!recipientParam) {
-      return res.status(400).json({ status: 'error', message: 'recipient obrigatório' });
-    }
+    if (!recipientParam) return res.status(400).json({ status: 'error', message: 'recipient obrigatório' });
 
     let chatIdOrGroup = normalizeRecipientToChatId(recipientParam);
-
-    if (!chatIdOrGroup) {
-      return res.status(400).json({ status: 'error', message: 'recipient inválido' });
-    }
+    if (!chatIdOrGroup) return res.status(400).json({ status: 'error', message: 'recipient inválido' });
 
     if (typeof chatIdOrGroup !== 'string') {
       const chats = await waState.client.getChats();
       const group = chats.find(chat => chat.isGroup && chat.name === chatIdOrGroup.groupName);
-      if (!group) {
-        return res.status(404).json({ status: 'error', message: `Grupo "${chatIdOrGroup.groupName}" não encontrado.` });
-      }
+      if (!group) return res.status(404).json({ status: 'error', message: `Grupo "${chatIdOrGroup.groupName}" não encontrado.` });
       chatIdOrGroup = group.id._serialized;
     }
 
@@ -833,29 +760,17 @@ app.get('/api/sendMessage/:recipient/:message', async (req, res) => {
   }
 });
 
-// ===== server start
 app.listen(port, () => {
   console.log(`[HTTP] API rodando na porta ${port}`);
   console.log(`[WS] WS rodando na porta ${wsPort}`);
 });
 
-// ===== graceful shutdown
 async function shutdown(sig) {
   console.log(`[SYS] shutdown (${sig})`);
   stopWatchdog();
-
-  try {
-    broadcast({ type: 'shutdown', sig });
-  } catch {}
-
-  try {
-    await stopClient({ reason: `shutdown:${sig}`, doLogout: false, wipeSession: false });
-  } catch {}
-
-  try {
-    wss.close(() => {});
-  } catch {}
-
+  try { broadcast({ type: 'shutdown', sig }); } catch {}
+  try { await stopClient({ reason: `shutdown:${sig}`, doLogout: false, wipeSession: false }); } catch {}
+  try { wss.close(() => {}); } catch {}
   process.exit(0);
 }
 

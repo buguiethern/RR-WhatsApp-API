@@ -1,451 +1,231 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-    <meta charset="UTF-8">
-    <title>WhatsApp API</title>
+  <meta charset="UTF-8">
+  <title>WhatsApp API</title>
 
-    <!-- Bootstrap 5 CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Bootstrap 5 CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
 
-    <!-- Emoji Picker -->
-    <link href="https://cdn.jsdelivr.net/npm/emoji-picker-element@1.19.0/index.css" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/emoji-picker-element@1.19.0/index.js"></script>
+  <!-- Emoji Picker (web component) -->
+  <script type="module" src="https://cdn.jsdelivr.net/npm/emoji-picker-element@1.19.0/index.js"></script>
 
-    <style>
-        /* Dark/Matrix Theme */
-        body {
-            background: #0a0a0a;
-            color: #00ff88;
-            font-family: 'Courier New', monospace;
-        }
+  <style>
+    body { background:#0a0a0a; color:#00ff88; font-family:'Courier New', monospace; }
+    .container { margin-top:50px; }
+    .card { background:#111; border:1px solid #00ff88; border-radius:0; box-shadow:0 0 20px rgba(0,255,136,0.3); }
+    .form-control, .form-control:focus { background:#1a1a1a; border:1px solid #00ff88; color:#00ff88; border-radius:0; }
+    .form-control:focus { box-shadow:0 0 10px rgba(0,255,136,0.5); }
+    h1,h2 { color:#00ff88; text-transform:uppercase; letter-spacing:1px; }
+    .btn-primary { background:#00ff88; border-color:#00ff88; color:#000; text-transform:uppercase; letter-spacing:1px; border-radius:0; }
+    .btn-primary:hover { background:#00cc66; border-color:#00cc66; box-shadow:0 0 15px rgba(0,255,136,0.6); }
+    .btn-outline-secondary { border-color:#00ff88; color:#00ff88; text-transform:uppercase; letter-spacing:1px; border-radius:0; }
+    .btn-outline-secondary:hover { background:#00ff88; color:#000; }
+    .btn-danger { background:#ff0040; border-color:#ff0040; color:#fff; text-transform:uppercase; letter-spacing:1px; border-radius:0; }
+    .btn-danger:hover { background:#cc0033; border-color:#cc0033; }
+    .muted { color:#666; font-size:0.95em; }
+    .loading { text-align:center; font-size:1.2em; color:#00ff88; }
+    .qr-wrap { display:flex; justify-content:center; align-items:center; }
+    #qrCode { max-width:260px; max-height:260px; border:2px solid #00ff88; filter:invert(1); }
 
-        .container {
-            margin-top: 50px;
-        }
+    /* Editor */
+    .message-editor{
+      background:#1a1a1a; border:1px solid #00ff88;
+      padding:10px; min-height:120px; border-radius:0; color:#00ff88;
+      white-space:pre-wrap; outline:none;
+    }
+    .message-editor:empty:before{
+      content: attr(data-placeholder);
+      color:#666;
+    }
+    .format-toolbar { background:#111; border:1px solid #00ff88; padding:5px; margin-bottom:5px; display:flex; gap:6px; align-items:center; position:relative; }
+    .format-toolbar button { background:none; border:1px solid #00ff88; color:#00ff88; padding:5px 10px; text-transform:uppercase; letter-spacing:1px; border-radius:0; }
+    .format-toolbar button:hover { background:#00ff88; color:#000; }
 
-        .card {
-            background: #111111;
-            border: 1px solid #00ff88;
-            border-radius: 0px;
-            box-shadow: 0 0 20px rgba(0,255,136,0.3);
-        }
+    /* Emoji popover */
+    #emojiPopover{
+      position:absolute;
+      top:45px;
+      left:0;
+      z-index:9999;
+      display:none;
+      box-shadow:0 0 20px rgba(0,255,136,0.35);
+      border:1px solid #00ff88;
+    }
+    emoji-picker{
+      --background: #0f0f0f;
+      --border-color: #00ff88;
+      --button-active-background: #00ff88;
+      --button-hover-background: #00cc66;
+      --outline-color: #00ff88;
+      --input-border-color: #00ff88;
+      --input-font-color: #00ff88;
+      --input-placeholder-color: #666;
+      --category-icon-active-color: #00ff88;
+      --category-icon-color: #00ff88;
+      --font-family: 'Courier New', monospace;
+      color:#00ff88;
+    }
 
-        .form-control, .form-control:focus {
-            background: #1a1a1a;
-            border: 1px solid #00ff88;
-            color: #00ff88;
-            border-radius: 0px;
-        }
+    /* Previews */
+    .file-preview { display:flex; flex-wrap:wrap; gap:10px; margin-top:10px; }
+    .preview-item { position:relative; border:1px solid #00ff88; padding:10px; background:#1a1a1a; }
+    .preview-item img, .preview-item video { max-width:100px; max-height:100px; }
+    .preview-item .file-info { margin-top:5px; font-size:12px; text-align:center; }
+    .preview-item .remove-preview { position:absolute; top:5px; right:5px; background:#ff0040; color:#fff; border:none; border-radius:50%; width:20px; height:20px; cursor:pointer; }
 
-        .form-control:focus {
-            box-shadow: 0 0 10px rgba(0,255,136,0.5);
-        }
+    /* Recipients */
+    .recipients-list{ display:flex; flex-wrap:wrap; gap:8px; min-height:60px; align-content:flex-start; }
+    .recipient-tag{ display:inline-flex; align-items:center; background:#00ff88; color:#000; padding:6px 12px; border-radius:0; font-size:14px; font-weight:bold; text-transform:uppercase; letter-spacing:1px; border:none; }
+    .recipient-tag .remove-tag{ background:none; border:none; color:#000; margin-left:8px; cursor:pointer; font-size:16px; font-weight:bold; line-height:1; }
+    .recipient-tag .remove-tag:hover{ color:#660000; }
 
-        h1, h2 {
-            color: #00ff88;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
+    /* Progress */
+    .progress-bar-container{ width:100%; height:30px; background:#1a1a1a; border:1px solid #00ff88; border-radius:0; overflow:hidden; margin:10px 0; display:none; }
+    .progress-bar-fill{ height:100%; background:linear-gradient(90deg,#00ff88,#00cc66); width:0%; transition:width .3s ease; position:relative; }
+    .progress-bar-text{ position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); color:#000; font-weight:bold; font-size:14px; text-transform:uppercase; letter-spacing:1px; }
 
-        .btn-primary {
-            background: #00ff88;
-            border-color: #00ff88;
-            color: #000000;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            border-radius: 0px;
-        }
+    /* Modal */
+    .modal-content{ background:#111; border:1px solid #00ff88; color:#00ff88; border-radius:0; }
+    .modal-header{ border-bottom:1px solid #00ff88; }
+    .modal-footer{ border-top:1px solid #00ff88; }
+    .btn-close{ filter:invert(1) hue-rotate(75deg); }
 
-        .btn-primary:hover {
-            background: #00cc66;
-            border-color: #00cc66;
-            box-shadow: 0 0 15px rgba(0,255,136,0.6);
-        }
-
-        .btn-outline-secondary {
-            border-color: #00ff88;
-            color: #00ff88;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            border-radius: 0px;
-        }
-
-        .btn-outline-secondary:hover {
-            background: #00ff88;
-            color: #000000;
-        }
-
-        .btn-danger {
-            background: #ff0040;
-            border-color: #ff0040;
-            color: #ffffff;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            border-radius: 0px;
-        }
-
-        .btn-danger:hover {
-            background: #cc0033;
-            border-color: #cc0033;
-        }
-
-        .muted {
-            color: #666666;
-            font-size: 0.95em;
-        }
-
-        .loading {
-            text-align: center;
-            font-size: 1.2em;
-            color: #00ff88;
-        }
-
-        /* QR Code Container */
-        .qr-wrap {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
-
-        #qrCode {
-            max-width: 260px;
-            max-height: 260px;
-            border: 2px solid #00ff88;
-            filter: invert(1);
-        }
-
-        /* Message Editor */
-        .message-editor {
-            background: #1a1a1a;
-            border: 1px solid #00ff88;
-            padding: 10px;
-            min-height: 120px;
-            resize: none;
-            border-radius: 0px;
-            color: #00ff88;
-        }
-
-        .message-editor:focus {
-            outline: none;
-            box-shadow: 0 0 10px rgba(0,255,136,0.5);
-        }
-
-        /* Toolbar */
-        .format-toolbar {
-            background: #111111;
-            border: 1px solid #00ff88;
-            padding: 5px;
-            margin-bottom: 5px;
-        }
-
-        .format-toolbar button {
-            background: none;
-            border: 1px solid #00ff88;
-            color: #00ff88;
-            padding: 5px 10px;
-            margin-right: 5px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            border-radius: 0px;
-        }
-
-        .format-toolbar button:hover {
-            background: #00ff88;
-            color: #000000;
-        }
-
-        /* File Previews */
-        .file-preview {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-            margin-top: 10px;
-        }
-
-        .preview-item {
-            position: relative;
-            border: 1px solid #00ff88;
-            padding: 10px;
-            background: #1a1a1a;
-        }
-
-        .preview-item img, .preview-item video {
-            max-width: 100px;
-            max-height: 100px;
-        }
-
-        .preview-item .file-info {
-            margin-top: 5px;
-            font-size: 12px;
-            text-align: center;
-        }
-
-        .preview-item .remove-preview {
-            position: absolute;
-            top: 5px;
-            right: 5px;
-            background: #ff0040;
-            color: white;
-            border: none;
-            border-radius: 50%;
-            width: 20px;
-            height: 20px;
-            cursor: pointer;
-        }
-
-        /* API Docs Button */
-        .api-docs-btn {
-            margin-top: 30px;
-            text-align: center;
-        }
-
-        .api-docs-btn button {
-            background: #00ff88;
-            border: 2px solid #00ff88;
-            color: #000000;
-            padding: 15px 30px;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            font-weight: bold;
-            font-size: 18px;
-            border-radius: 0px;
-            cursor: pointer;
-            box-shadow: 0 0 20px rgba(0,255,136,0.5);
-        }
-
-        .api-docs-btn button:hover {
-            background: #000000;
-            color: #00ff88;
-            transform: scale(1.05);
-            transition: all 0.3s;
-        }
-
-        /* Recipients List */
-        .recipients-list {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            min-height: 60px;
-            align-content: flex-start;
-        }
-
-        .recipient-tag {
-            display: inline-flex;
-            align-items: center;
-            background: #00ff88;
-            color: #000000;
-            padding: 6px 12px;
-            border-radius: 0px;
-            font-size: 14px;
-            font-weight: bold;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            border: none;
-        }
-
-        .recipient-tag .remove-tag {
-            background: none;
-            border: none;
-            color: #000000;
-            margin-left: 8px;
-            cursor: pointer;
-            font-size: 16px;
-            font-weight: bold;
-            line-height: 1;
-        }
-
-        .recipient-tag .remove-tag:hover {
-            color: #660000;
-        }
-
-        /* Progress Bar */
-        .progress-bar-container {
-            width: 100%;
-            height: 30px;
-            background: #1a1a1a;
-            border: 1px solid #00ff88;
-            border-radius: 0px;
-            overflow: hidden;
-            margin: 10px 0;
-            display: none; /* hidden by default */
-        }
-
-        .progress-bar-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #00ff88, #00cc66);
-            width: 0%;
-            transition: width 0.3s ease;
-            position: relative;
-        }
-
-        .progress-bar-text {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            color: #000000;
-            font-weight: bold;
-            font-size: 14px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-
-        /* Modal Styles */
-        .modal-content {
-            background: #111111;
-            border: 1px solid #00ff88;
-            color: #00ff88;
-            border-radius: 0px;
-        }
-
-        .modal-header {
-            border-bottom: 1px solid #00ff88;
-        }
-
-        .modal-footer {
-            border-top: 1px solid #00ff88;
-        }
-
-        .btn-close {
-            filter: invert(1) hue-rotate(75deg);
-        }
-    </style>
+    .api-docs-btn{ margin-top:30px; text-align:center; }
+    .api-docs-btn button{ background:#00ff88; border:2px solid #00ff88; color:#000; padding:15px 30px; text-transform:uppercase; letter-spacing:2px; font-weight:bold; font-size:18px; border-radius:0; cursor:pointer; box-shadow:0 0 20px rgba(0,255,136,0.5); }
+    .api-docs-btn button:hover{ background:#000; color:#00ff88; transform:scale(1.05); transition:all .3s; }
+  </style>
 </head>
+
 <body>
-
 <div class="container">
-    <div class="row justify-content-center">
-        <div class="col-md-10">
-            <div class="card p-4">
-                <h1 class="text-center mb-4">> WHATSAPP API <</h1>
+  <div class="row justify-content-center">
+    <div class="col-md-10">
+      <div class="card p-4">
+        <h1 class="text-center mb-4">> WHATSAPP API <</h1>
 
-                <h2>> ENVIAR MENSAGEM</h2>
-                <form id="messageForm" action="/api/send" method="POST" enctype="multipart/form-data" class="mb-4" accept-charset="UTF-8">
-                    <div class="mb-3">
-                        <label for="recipientsInput" class="form-label">DESTINATÁRIOS</label>
-                        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
-                            <input type="text" id="recipientsInput" class="form-control"
-                                   placeholder="Digite telefone ou nome do grupo..."
-                                   style="flex: 1;">
-                            <button type="button" id="addRecipientBtn" class="btn" style="white-space: nowrap;">+ ADICIONAR</button>
-                            <button type="button" id="importContactsBtn" class="btn" style="white-space: nowrap;">📁 IMPORTAR JSON</button>
-                        </div>
-                        <div id="recipientsList" class="recipients-list" style="min-height: 50px; border: 1px solid #00ff88; padding: 10px; border-radius: 0px; background: #1a1a1a; margin-bottom: 10px;">
-                            <div class="muted" style="color: #666666;">Nenhum destinatário adicionado</div>
-                        </div>
-                        <input type="hidden" id="recipients" name="recipients">
-                        <div class="muted mt-1">
-                            DICA: ADICIONE TELEFONES UM POR UM. JSON DEVE TER FORMATO: [{"nome": "JOÃO", "telefones": ["(11)99999-9999"]}]
-                        </div>
-                    </div>
-
-                    <div class="mb-3">
-                        <label for="delayInput" class="form-label">TEMPO ENTRE MENSAGENS (SEGUNDOS)</label>
-                        <input type="number" id="delayInput" name="delay" class="form-control"
-                               value="1.2" min="0" max="60" step="0.1"
-                               placeholder="1.2">
-                        <div class="muted mt-1">
-                            TEMPO DE ESPERA ENTRE O ENVIO DE UMA MENSAGEM E OUTRA. PADRÃO: 1.2 SEGUNDOS.
-                        </div>
-                    </div>
-
-                    <div class="mb-3">
-                        <label for="countrySelect" class="form-label">PAÍS PARA FORMATAÇÃO</label>
-                        <select id="countrySelect" name="country" class="form-control">
-                            <option value="BR">🇧🇷 BRASIL (+55)</option>
-                            <option value="US">🇺🇸 ESTADOS UNIDOS (+1)</option>
-                            <option value="OTHER">🌍 OUTRO (SEM FORMATAÇÃO)</option>
-                        </select>
-                        <div class="muted mt-1">
-                            ESCOLHA O FORMATO QUE SERÁ APLICADO AOS TELEFONES.
-                        </div>
-                    </div>
-
-                    <div class="mb-3">
-                        <label for="message" class="form-label">MENSAGEM</label>
-                        <div class="format-toolbar">
-                            <button type="button" id="boldBtn">*</button>
-                            <button type="button" id="italicBtn">_</button>
-                            <button type="button" id="emojiBtn">😀</button>
-                            <span id="emojiPicker" style="display: inline-block;"></span>
-                        </div>
-                        <div class="message-editor" id="messageEditor" contenteditable="true" placeholder="DIGITE SUA MENSAGEM AQUI"></div>
-                        <textarea id="message" name="message" class="d-none"></textarea>
-                        <div class="muted mt-1">
-                            ARRASTE E SOLTE IMAGENS, PDFS OU VIDEOS AQUI.
-                        </div>
-                        <div class="file-preview" id="filePreview"></div>
-                    </div>
-
-                    <div class="progress-bar-container" id="progressContainer">
-                        <div class="progress-bar-fill" id="progressBar">
-                            <div class="progress-bar-text" id="progressText">AGUARDANDO...</div>
-                        </div>
-                    </div>
-
-                    <button type="submit" class="btn btn-primary w-100" id="btnSend">> ENVIAR MENSAGEM</button>
-                </form>
-
-                <hr class="my-4">
-
-                <h2 id="connectionStatus" class="text-center">CARREGANDO STATUS...</h2>
-                <div id="connectBtn" class="text-center mt-3"></div>
-
-                <div class="muted text-center mt-3" id="stateHint"></div>
-
-                <div class="api-docs-btn">
-                    <button type="button" onclick="window.open('doc.html', '_blank')">> DOCUMENTAÇÃO DA API</button>
-                </div>
+        <h2>> ENVIAR MENSAGEM</h2>
+        <form id="messageForm" action="/api/send" method="POST" enctype="multipart/form-data" class="mb-4" accept-charset="UTF-8">
+          <div class="mb-3">
+            <label for="recipientsInput" class="form-label">DESTINATÁRIOS</label>
+            <div style="display:flex; gap:10px; margin-bottom:10px;">
+              <input type="text" id="recipientsInput" class="form-control" placeholder="Digite telefone ou nome do grupo..." style="flex:1;">
+              <button type="button" id="addRecipientBtn" class="btn btn-outline-secondary" style="white-space:nowrap;">+ ADICIONAR</button>
+              <button type="button" id="importContactsBtn" class="btn btn-outline-secondary" style="white-space:nowrap;">📁 IMPORTAR JSON</button>
             </div>
+
+            <div id="recipientsList" class="recipients-list" style="min-height:50px; border:1px solid #00ff88; padding:10px; border-radius:0; background:#1a1a1a; margin-bottom:10px;">
+              <div class="muted">Nenhum destinatário adicionado</div>
+            </div>
+
+            <!-- ✅ IMPORTANTE: backend lê isso como string JSON -->
+            <input type="hidden" id="recipients" name="recipients" value="[]">
+
+            <div class="muted mt-1">
+              DICA: ADICIONE TELEFONES UM POR UM. JSON: [{"nome":"JOÃO","telefones":["(11)99999-9999"]}]
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label for="delayInput" class="form-label">TEMPO ENTRE MENSAGENS (SEGUNDOS)</label>
+            <input type="number" id="delayInput" name="delay" class="form-control" value="1.2" min="0" max="60" step="0.1" placeholder="1.2">
+            <div class="muted mt-1">TEMPO DE ESPERA ENTRE O ENVIO DE UMA MENSAGEM E OUTRA. PADRÃO: 1.2 SEGUNDOS.</div>
+          </div>
+
+          <div class="mb-3">
+            <label for="countrySelect" class="form-label">PAÍS PARA FORMATAÇÃO</label>
+            <select id="countrySelect" name="country" class="form-control">
+              <option value="BR">🇧🇷 BRASIL (+55)</option>
+              <option value="US">🇺🇸 ESTADOS UNIDOS (+1)</option>
+              <option value="OTHER">🌍 OUTRO (SEM FORMATAÇÃO)</option>
+            </select>
+            <div class="muted mt-1">ESCOLHA O FORMATO QUE SERÁ APLICADO AOS TELEFONES.</div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">MENSAGEM</label>
+
+            <div class="format-toolbar" id="toolbar">
+              <button type="button" id="boldBtn" title="Negrito">*</button>
+              <button type="button" id="italicBtn" title="Itálico">_</button>
+              <button type="button" id="emojiBtn" title="Emojis">😀</button>
+
+              <!-- ✅ POPUP REAL DO EMOJI PICKER -->
+              <div id="emojiPopover">
+                <emoji-picker id="emojiPickerEl"></emoji-picker>
+              </div>
+            </div>
+
+            <div class="message-editor" id="messageEditor" contenteditable="true" data-placeholder="DIGITE SUA MENSAGEM AQUI"></div>
+
+            <!-- ✅ textarea real que o backend usa -->
+            <textarea id="message" name="message" class="d-none"></textarea>
+
+            <div class="muted mt-1">ARRASTE E SOLTE IMAGENS, PDFS OU VIDEOS AQUI.</div>
+            <div class="file-preview" id="filePreview"></div>
+          </div>
+
+          <div class="progress-bar-container" id="progressContainer">
+            <div class="progress-bar-fill" id="progressBar">
+              <div class="progress-bar-text" id="progressText">AGUARDANDO...</div>
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-primary w-100" id="btnSend">> ENVIAR MENSAGEM</button>
+        </form>
+
+        <hr class="my-4">
+
+        <h2 id="connectionStatus" class="text-center">CARREGANDO STATUS...</h2>
+        <div id="connectBtn" class="text-center mt-3"></div>
+        <div class="muted text-center mt-3" id="stateHint"></div>
+
+        <div class="api-docs-btn">
+          <button type="button" onclick="window.open('doc.html','_blank')">> DOCUMENTAÇÃO DA API</button>
         </div>
+      </div>
     </div>
+  </div>
 </div>
 
 <!-- Modal QR -->
 <div class="modal fade" id="qrModal" tabindex="-1" aria-labelledby="qrModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="qrModalLabel">CONECTAR AO WHATSAPP</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body text-center">
-                <h6>ESCANEIE O QR CODE ABAIXO:</h6>
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="qrModalLabel">CONECTAR AO WHATSAPP</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body text-center">
+        <h6>ESCANEIE O QR CODE ABAIXO:</h6>
 
-                <div id="qrCodeContainer" class="mt-3">
-                    <div class="loading" id="loadingMessage">CARREGANDO QR CODE...</div>
-
-                    <div class="qr-wrap mt-2">
-                        <img id="qrCode" src="" alt="QR Code" style="display:none;">
-                    </div>
-
-                    <div class="muted mt-3" id="qrHint" style="display:none;">
-                        SE EXPIRAR, CLIQUE EM "ATUALIZAR QR".
-                    </div>
-
-                    <button class="btn btn-outline-secondary w-100 mt-3" id="btnRefreshQR" type="button">
-                        ATUALIZAR QR
-                    </button>
-                </div>
-            </div>
+        <div id="qrCodeContainer" class="mt-3">
+          <div class="loading" id="loadingMessage">CARREGANDO QR CODE...</div>
+          <div class="qr-wrap mt-2">
+            <img id="qrCode" src="" alt="QR Code" style="display:none;">
+          </div>
+          <div class="muted mt-3" id="qrHint" style="display:none;">SE EXPIRAR, CLIQUE EM "ATUALIZAR QR".</div>
+          <button class="btn btn-outline-secondary w-100 mt-3" id="btnRefreshQR" type="button">ATUALIZAR QR</button>
         </div>
+      </div>
     </div>
+  </div>
 </div>
 
 <!-- Modal Mensagens -->
 <div class="modal fade" id="messageModal" tabindex="-1" aria-labelledby="messageModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="messageModalLabel">MENSAGEM</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body" id="messageModalBody"></div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">FECHAR</button>
-            </div>
-        </div>
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="messageModalLabel">MENSAGEM</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="messageModalBody"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">FECHAR</button>
+      </div>
     </div>
+  </div>
 </div>
 
 <!-- Bootstrap 5 JS -->
@@ -453,65 +233,80 @@
 <script src="/config.js"></script>
 
 <script>
-let qrModalInstance = null;
-let ws = null;
-let attachedFiles = [];
+  // ============================================================
+  // ✅ POR QUE NÃO FUNCIONAVA (RESOLVIDO NO CÓDIGO):
+  //
+  // 1) Emoji Picker: você estava usando "new EmojiPicker()" mas essa lib
+  //    é um Web Component (<emoji-picker>), não um construtor.
+  //    Resultado: erro JS -> o resto dos listeners não rodava.
+  //
+  // 2) formatText(): sua função assinava (selection,prefix) mas você chamava
+  //    formatText('*') e formatText('_') => quebrava/ficava inconsistente.
+  //
+  // 3) import JSON / add destinatário: como o JS quebrava antes, os listeners
+  //    nem chegavam a existir.
+  //
+  // 4) recipients no backend: o hidden envia JSON string "[]", mas o backend
+  //    tratava como CSV. Agora frontend sempre envia JSON; backend parseia.
+  // ============================================================
 
-function showMessageModal(title, message, type) {
+  let qrModalInstance = null;
+  let ws = null;
+  let attachedFiles = [];
+
+  function showMessageModal(title, message, type) {
     const messageModalLabel = document.getElementById('messageModalLabel');
     const messageModalBody = document.getElementById('messageModalBody');
     messageModalLabel.textContent = title;
     messageModalBody.innerHTML = `<div class="alert alert-${type}" role="alert">${escapeHtml(message)}</div>`;
     const messageModal = new bootstrap.Modal(document.getElementById('messageModal'));
     messageModal.show();
-}
+  }
 
-function escapeHtml(str) {
+  function escapeHtml(str) {
     return String(str ?? '')
-        .replaceAll('&', '&')
-        .replaceAll('<', '<')
-        .replaceAll('>', '>')
-        .replaceAll('"', '"')
-        .replaceAll("'", '&#039;');
-}
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;');
+  }
 
-async function loadStatus() {
+  async function loadStatus() {
     try {
-        const r = await fetch('/api/status', { cache: 'no-store' });
-        const data = await r.json();
+      const r = await fetch('/api/status', { cache: 'no-store' });
+      const data = await r.json();
 
-        const connectionStatus = document.getElementById('connectionStatus');
-        const connectBtn = document.getElementById('connectBtn');
-        const stateHint = document.getElementById('stateHint');
+      const connectionStatus = document.getElementById('connectionStatus');
+      const connectBtn = document.getElementById('connectBtn');
+      const stateHint = document.getElementById('stateHint');
 
-        if (data.status === 'connected') {
-            connectionStatus.textContent = `CONECTADO AO WHATSAPP: ${data.number || ''}`.trim();
-            stateHint.textContent = data.state ? `ESTADO: ${data.state}` : '';
-
-            connectBtn.innerHTML = `
-                <div class="btn-row" style="display:flex; gap:10px;">
-                    <button style="flex:1;" class="btn btn-danger" onclick="disconnect()">DESCONECTAR</button>
-                    <button style="flex:1;" class="btn btn-outline-danger" onclick="resetSession()">RESETAR SESSÃO</button>
-                </div>
-            `;
-        } else {
-            connectionStatus.textContent = 'NÃO CONECTADO AO WHATSAPP';
-            stateHint.textContent = data.state ? `ESTADO: ${data.state}` : '';
-
-            connectBtn.innerHTML = `
-                <div class="btn-row" style="display:flex; gap:10px;">
-                    <button style="flex:1;" class="btn btn-success" onclick="showQrCode()">CONECTAR</button>
-                    <button style="flex:1;" class="btn btn-outline-danger" onclick="resetSession()">RESETAR SESSÃO</button>
-                </div>
-            `;
-        }
+      if (data.status === 'connected') {
+        connectionStatus.textContent = `CONECTADO AO WHATSAPP: ${data.number || ''}`.trim();
+        stateHint.textContent = data.state ? `ESTADO: ${data.state}` : '';
+        connectBtn.innerHTML = `
+          <div style="display:flex; gap:10px;">
+            <button style="flex:1;" class="btn btn-danger" onclick="disconnect()">DESCONECTAR</button>
+            <button style="flex:1;" class="btn btn-outline-danger" onclick="resetSession()">RESETAR SESSÃO</button>
+          </div>
+        `;
+      } else {
+        connectionStatus.textContent = 'NÃO CONECTADO AO WHATSAPP';
+        stateHint.textContent = data.state ? `ESTADO: ${data.state}` : '';
+        connectBtn.innerHTML = `
+          <div style="display:flex; gap:10px;">
+            <button style="flex:1;" class="btn btn-success" onclick="showQrCode()">CONECTAR</button>
+            <button style="flex:1;" class="btn btn-outline-danger" onclick="resetSession()">RESETAR SESSÃO</button>
+          </div>
+        `;
+      }
     } catch (err) {
-        console.error('Erro ao verificar status:', err);
-        document.getElementById('connectionStatus').textContent = 'ERRO AO CARREGAR O STATUS';
+      console.error('Erro ao verificar status:', err);
+      document.getElementById('connectionStatus').textContent = 'ERRO AO CARREGAR O STATUS';
     }
-}
+  }
 
-async function fetchAndShowQr() {
+  async function fetchAndShowQr() {
     const loadingMessage = document.getElementById('loadingMessage');
     const qrCode = document.getElementById('qrCode');
     const qrHint = document.getElementById('qrHint');
@@ -521,511 +316,537 @@ async function fetchAndShowQr() {
     qrHint.style.display = 'none';
 
     try {
-        const r = await fetch('/api/qr', { cache: 'no-store' });
+      const r = await fetch('/api/qr', { cache: 'no-store' });
+      const ct = (r.headers.get('content-type') || '').toLowerCase();
 
-        // se vier JSON, é status (connected/waiting/error)
-        const ct = (r.headers.get('content-type') || '').toLowerCase();
-        if (ct.includes('application/json')) {
-            const data = await r.json();
-            if (data.status === 'connected') {
-                loadingMessage.style.display = 'none';
-                showMessageModal('Info', data.message || 'JÁ CONECTADO.', 'info');
-                if (qrModalInstance) qrModalInstance.hide();
-                await loadStatus();
-                return;
-            }
-            if (data.status === 'waiting') {
-                loadingMessage.textContent = data.message || 'AGUARDANDO GERAR QR...';
-                return;
-            }
-            loadingMessage.textContent = data.message || 'ERRO AO GERAR QR.';
-            return;
+      if (ct.includes('application/json')) {
+        const data = await r.json();
+        if (data.status === 'connected') {
+          loadingMessage.style.display = 'none';
+          showMessageModal('Info', data.message || 'JÁ CONECTADO.', 'info');
+          if (qrModalInstance) qrModalInstance.hide();
+          await loadStatus();
+          return;
         }
+        if (data.status === 'waiting') {
+          loadingMessage.textContent = data.message || 'AGUARDANDO GERAR QR...';
+          return;
+        }
+        loadingMessage.textContent = data.message || 'ERRO AO GERAR QR.';
+        return;
+      }
 
-        // imagem png
-        const blob = await r.blob();
-        const url = URL.createObjectURL(blob);
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
 
-        qrCode.src = url;
-        loadingMessage.style.display = 'none';
-        qrCode.style.display = 'block';
-        qrHint.style.display = 'block';
+      qrCode.src = url;
+      loadingMessage.style.display = 'none';
+      qrCode.style.display = 'block';
+      qrHint.style.display = 'block';
     } catch (err) {
-        console.error('Erro ao carregar QR:', err);
-        loadingMessage.textContent = 'ERRO AO CARREGAR QR CODE.';
+      console.error('Erro ao carregar QR:', err);
+      loadingMessage.textContent = 'ERRO AO CARREGAR QR CODE.';
     }
-}
+  }
 
-function showQrCode() {
+  function showQrCode() {
     qrModalInstance = new bootstrap.Modal(document.getElementById('qrModal'));
     qrModalInstance.show();
     fetchAndShowQr();
-}
+  }
 
-async function disconnect() {
+  async function disconnect() {
     try {
-        await fetch('/api/disconnect', { cache: 'no-store' });
-        showMessageModal('DESCONECTADO', 'DESCONECTADO E REINICIALIZADO!', 'warning');
-
-        document.getElementById('messageModal').addEventListener('hidden.bs.modal', async () => {
-            await loadStatus();
-        }, { once: true });
+      await fetch('/api/disconnect', { cache: 'no-store' });
+      showMessageModal('DESCONECTADO', 'DESCONECTADO E REINICIALIZADO!', 'warning');
+      document.getElementById('messageModal').addEventListener('hidden.bs.modal', async () => {
+        await loadStatus();
+      }, { once: true });
     } catch (err) {
-        console.error('Erro ao desconectar:', err);
-        showMessageModal('ERRO', 'ERRO AO DESCONECTAR.', 'danger');
+      console.error('Erro ao desconectar:', err);
+      showMessageModal('ERRO', 'ERRO AO DESCONECTAR.', 'danger');
     }
-}
+  }
 
-async function resetSession() {
+  async function resetSession() {
     try {
-        // só funciona se você tiver /api/reset no backend (index.js novo)
-        const r = await fetch('/api/reset', { cache: 'no-store' });
-        const txt = await r.text().catch(() => '');
-        showMessageModal('SESSÃO', txt || 'SESSÃO RESETADA! GERE NOVO QR.', 'warning');
-
-        document.getElementById('messageModal').addEventListener('hidden.bs.modal', async () => {
-            await loadStatus();
-        }, { once: true });
+      const r = await fetch('/api/reset', { cache: 'no-store' });
+      const txt = await r.text().catch(() => '');
+      showMessageModal('SESSÃO', txt || 'SESSÃO RESETADA! GERE NOVO QR.', 'warning');
+      document.getElementById('messageModal').addEventListener('hidden.bs.modal', async () => {
+        await loadStatus();
+      }, { once: true });
     } catch (err) {
-        console.error('Erro ao resetar sessão:', err);
-        showMessageModal('ERRO', 'ERRO AO RESETAR SESSÃO (TALVEZ /api/reset NÃO EXISTA).', 'danger');
+      console.error('Erro ao resetar sessão:', err);
+      showMessageModal('ERRO', 'ERRO AO RESETAR SESSÃO.', 'danger');
     }
-}
+  }
 
-function connectWebSocket() {
+  function connectWebSocket() {
     try {
-        const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
+      const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
+      const host = location.hostname;
+      const wsPort = window.__WS_PORT__ ? `:${window.__WS_PORT__}` : (location.port ? `:${location.port}` : '');
+      const wsUrl = `${protocol}://${host}${wsPort}`;
+      ws = new WebSocket(wsUrl);
 
-        // usa host completo (hostname:porta). Se /config.js setar WS_PORT, usa ela.
-        const host = location.hostname;
-        const wsPort = window.__WS_PORT__ ? `:${window.__WS_PORT__}` : (location.port ? `:${location.port}` : '');
-        const wsUrl = `${protocol}://${host}${wsPort}`;
+      ws.onopen = () => console.log('[WS] conectado:', wsUrl);
+      ws.onclose = () => { console.log('[WS] desconectado, tentando reconectar...'); setTimeout(connectWebSocket, 1500); };
+      ws.onerror = (e) => console.log('[WS] erro:', e);
 
-        ws = new WebSocket(wsUrl);
+      ws.onmessage = async (event) => {
+        let data;
+        try { data = JSON.parse(event.data); } catch { return; }
 
-        ws.onopen = () => console.log('[WS] conectado:', wsUrl);
-        ws.onclose = () => {
-            console.log('[WS] desconectado, tentando reconectar...');
-            setTimeout(connectWebSocket, 1500);
-        };
+        if (data.type === 'qr') {
+          if (!qrModalInstance) qrModalInstance = new bootstrap.Modal(document.getElementById('qrModal'));
+          qrModalInstance.show();
+          await fetchAndShowQr();
+        }
 
-        ws.onerror = (e) => console.log('[WS] erro:', e);
+        if (data.type === 'authenticated' || data.type === 'ready') {
+          if (qrModalInstance) qrModalInstance.hide();
+          await loadStatus();
+        }
 
-        ws.onmessage = async (event) => {
-            let data;
-            try { data = JSON.parse(event.data); } catch { return; }
+        if (data.type === 'disconnected') {
+          await loadStatus();
+        }
 
-            if (data.type === 'qr') {
-                // quando chegar QR via WS, abre modal e puxa imagem do backend (evita QR externo)
-                if (!qrModalInstance) {
-                    qrModalInstance = new bootstrap.Modal(document.getElementById('qrModal'));
-                }
-                qrModalInstance.show();
-                await fetchAndShowQr();
-            }
+        if (data.type === 'change_state' || data.type === 'state') {
+          const stateHint = document.getElementById('stateHint');
+          if (data.state) stateHint.textContent = `ESTADO: ${data.state}`;
+        }
 
-            if (data.type === 'authenticated' || data.type === 'ready') {
-                if (qrModalInstance) qrModalInstance.hide();
-                await loadStatus();
-            }
-
-            if (data.type === 'disconnected') {
-                await loadStatus();
-            }
-
-            if (data.type === 'change_state' || data.type === 'state') {
-                const stateHint = document.getElementById('stateHint');
-                if (data.state) stateHint.textContent = `ESTADO: ${data.state}`;
-            }
-
-            // Progresso do envio
-            if (data.type === 'send_progress') {
-                if (data.step === 'starting') {
-                    showProgress();
-                    updateProgress(0, data.total, 'INICIANDO...');
-                } else if (data.step === 'sending') {
-                    updateProgress(data.current, data.total, `${data.recipient}`);
-                } else if (data.step === 'completed') {
-                    updateProgress(data.total, data.total, `${data.success}/${data.total} - CONCLUÍDO!`);
-                    setTimeout(() => {
-                        const submitButton = document.getElementById('btnSend');
-                        submitButton.disabled = false;
-                        submitButton.textContent = '> ENVIAR MENSAGEM';
-                    }, 1000);
-                }
-            }
-        };
+        if (data.type === 'send_progress') {
+          if (data.step === 'starting') {
+            showProgress();
+            updateProgress(0, data.total, 'INICIANDO...');
+          } else if (data.step === 'sending') {
+            updateProgress(data.current, data.total, `${data.recipient}`);
+          } else if (data.step === 'completed') {
+            updateProgress(data.total, data.total, `${data.success}/${data.total} - CONCLUÍDO!`);
+            setTimeout(() => {
+              const submitButton = document.getElementById('btnSend');
+              submitButton.disabled = false;
+              submitButton.textContent = '> ENVIAR MENSAGEM';
+            }, 800);
+          }
+        }
+      };
     } catch (err) {
-        console.error('[WS] erro ao iniciar:', err);
-        setTimeout(connectWebSocket, 1500);
+      console.error('[WS] erro ao iniciar:', err);
+      setTimeout(connectWebSocket, 1500);
     }
-}
+  }
 
-// Formatação de mensagens
-function formatText(selection, prefix) {
+  // =========================
+  // ✅ FORMATAÇÃO WHATSAPP
+  // =========================
+  function insertAtCaret(text) {
     const editor = document.getElementById('messageEditor');
-    const selectionObj = window.getSelection();
-    const range = selectionObj.getRangeAt(0);
-
-    if (range.collapsed) {
-        // Sem seleção - inserir formato vazio
-        const textNode = document.createTextNode(prefix + prefix);
-        range.insertNode(textNode);
-        range.setStartBefore(textNode);
-        range.setEnd(textNode, prefix.length);
-        selectionObj.removeAllRanges();
-        selectionObj.addRange(range);
-    } else {
-        // Com seleção - aplicar formato
-        const selectedText = range.toString();
-        const formattedText = prefix + selectedText + prefix;
-        range.deleteContents();
-        range.insertNode(document.createTextNode(formattedText));
-    }
     editor.focus();
-}
 
-// Emoji Picker
-function initEmojiPicker() {
-    const picker = new EmojiPicker();
-    const emojiBtn = document.getElementById('emojiBtn');
-    const container = document.getElementById('emojiPicker');
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) {
+      editor.appendChild(document.createTextNode(text));
+      return;
+    }
+    const range = sel.getRangeAt(0);
+    range.deleteContents();
+    range.insertNode(document.createTextNode(text));
 
-    container.appendChild(picker);
+    range.setStart(range.endContainer, range.endOffset);
+    range.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
 
-    picker.style.display = 'none';
-    picker.style.position = 'absolute';
-    picker.style.zIndex = '1000';
+  function wrapSelection(prefix, suffix) {
+    const editor = document.getElementById('messageEditor');
+    editor.focus();
 
-    emojiBtn.addEventListener('click', () => {
-        picker.style.display = picker.style.display === 'none' ? 'block' : 'none';
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) {
+      insertAtCaret(prefix + suffix);
+      // coloca cursor no meio
+      const r = document.createRange();
+      const node = editor.lastChild;
+      if (node && node.nodeType === Node.TEXT_NODE) {
+        r.setStart(node, node.textContent.length - suffix.length);
+        r.setEnd(node, node.textContent.length - suffix.length);
+        sel.removeAllRanges();
+        sel.addRange(r);
+      }
+      return;
+    }
+
+    const range = sel.getRangeAt(0);
+    const selectedText = range.toString();
+
+    if (!selectedText) {
+      insertAtCaret(prefix + suffix);
+      // cursor no meio
+      const r = sel.getRangeAt(0);
+      r.setStart(r.endContainer, Math.max(0, r.endOffset - suffix.length));
+      r.setEnd(r.endContainer, Math.max(0, r.endOffset - suffix.length));
+      sel.removeAllRanges();
+      sel.addRange(r);
+      return;
+    }
+
+    range.deleteContents();
+    range.insertNode(document.createTextNode(prefix + selectedText + suffix));
+    range.collapse(false);
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+
+  function updateHiddenTextarea() {
+    const editor = document.getElementById('messageEditor');
+    const textarea = document.getElementById('message');
+    textarea.value = (editor.innerText || '').replace(/\u00A0/g, ' ').trimEnd();
+  }
+
+  // =========================
+  // ✅ EMOJI PICKER
+  // =========================
+  function initEmojiPicker() {
+    const btn = document.getElementById('emojiBtn');
+    const pop = document.getElementById('emojiPopover');
+    const picker = document.getElementById('emojiPickerEl');
+    const toolbar = document.getElementById('toolbar');
+
+    function toggle() {
+      pop.style.display = (pop.style.display === 'none' || !pop.style.display) ? 'block' : 'none';
+    }
+
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      toggle();
     });
 
-    picker.addEventListener('emoji-click', event => {
-        const editor = document.getElementById('messageEditor');
-        const emoji = event.detail.emoji.unicode;
-        editor.appendChild(document.createTextNode(emoji));
-        picker.style.display = 'none';
-        editor.focus();
+    picker.addEventListener('emoji-click', (event) => {
+      const emoji = event.detail?.unicode || event.detail?.emoji?.unicode;
+      if (emoji) insertAtCaret(emoji);
+      pop.style.display = 'none';
     });
-}
 
-// Drag & Drop
-function initDragDrop() {
+    // fecha ao clicar fora
+    document.addEventListener('click', (e) => {
+      if (!toolbar.contains(e.target)) {
+        pop.style.display = 'none';
+      }
+    });
+  }
+
+  // =========================
+  // ✅ DRAG & DROP FILES
+  // =========================
+  function initDragDrop() {
     const editor = document.getElementById('messageEditor');
     const previewContainer = document.getElementById('filePreview');
 
     editor.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'copy';
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
     });
 
     editor.addEventListener('drop', (e) => {
-        e.preventDefault();
-        const files = e.dataTransfer.files;
-        handleFiles(files);
+      e.preventDefault();
+      const files = e.dataTransfer.files;
+      handleFiles(files);
     });
 
     function handleFiles(files) {
-        for (let file of files) {
-            if (attachedFiles.length >= 5) {
-                showMessageModal('ERRO', 'MÁXIMO DE 5 ARQUIVOS POR MENSAGEM.', 'warning');
-                return;
-            }
-
-            const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'application/pdf', 'video/mp4', 'video/webm'];
-            if (!allowedTypes.includes(file.type)) {
-                showMessageModal('ERRO', 'FORMATO NÃO SUPORTADO. APENAS IMAGENS, PDFS E VÍDEOS.', 'danger');
-                continue;
-            }
-
-            attachedFiles.push(file);
-            renderPreview(file, attachedFiles.length - 1);
+      for (let file of files) {
+        if (attachedFiles.length >= 5) {
+          showMessageModal('ERRO', 'MÁXIMO DE 5 ARQUIVOS POR MENSAGEM.', 'warning');
+          return;
         }
+
+        const allowedTypes = ['image/jpeg','image/png','image/gif','application/pdf','video/mp4','video/webm'];
+        if (!allowedTypes.includes(file.type)) {
+          showMessageModal('ERRO', 'FORMATO NÃO SUPORTADO. APENAS IMAGENS, PDFS E VÍDEOS.', 'danger');
+          continue;
+        }
+
+        attachedFiles.push(file);
+        renderPreview(file);
+      }
+      updateFileInputs();
     }
 
-    function renderPreview(file, index) {
-        const itemDiv = document.createElement('div');
-        itemDiv.className = 'preview-item';
-        itemDiv.dataset.index = index;
+    function renderPreview(file) {
+      const itemDiv = document.createElement('div');
+      itemDiv.className = 'preview-item';
 
-        const removeBtn = document.createElement('button');
-        removeBtn.className = 'remove-preview';
-        removeBtn.textContent = '×';
-        removeBtn.onclick = () => {
-            attachedFiles.splice(index, 1);
-            itemDiv.remove();
-            updateFileInputs();
-        };
-        itemDiv.appendChild(removeBtn);
-
-        if (file.type.startsWith('image/')) {
-            const img = document.createElement('img');
-            img.src = URL.createObjectURL(file);
-            itemDiv.appendChild(img);
-        } else if (file.type === 'application/pdf') {
-            const pdfIcon = document.createElement('div');
-            pdfIcon.textContent = '📄';
-            pdfIcon.style.fontSize = '50px';
-            itemDiv.appendChild(pdfIcon);
-        } else if (file.type.startsWith('video/')) {
-            const video = document.createElement('video');
-            video.src = URL.createObjectURL(file);
-            video.style.maxWidth = '100px';
-            video.style.maxHeight = '100px';
-            itemDiv.appendChild(video);
-        }
-
-        const fileInfo = document.createElement('div');
-        fileInfo.className = 'file-info';
-        fileInfo.textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
-        itemDiv.appendChild(fileInfo);
-
-        previewContainer.appendChild(itemDiv);
+      const removeBtn = document.createElement('button');
+      removeBtn.className = 'remove-preview';
+      removeBtn.textContent = '×';
+      removeBtn.onclick = () => {
+        const idx = Array.from(previewContainer.children).indexOf(itemDiv);
+        if (idx >= 0) attachedFiles.splice(idx, 1);
+        itemDiv.remove();
         updateFileInputs();
+      };
+      itemDiv.appendChild(removeBtn);
+
+      if (file.type.startsWith('image/')) {
+        const img = document.createElement('img');
+        img.src = URL.createObjectURL(file);
+        itemDiv.appendChild(img);
+      } else if (file.type === 'application/pdf') {
+        const pdfIcon = document.createElement('div');
+        pdfIcon.textContent = '📄';
+        pdfIcon.style.fontSize = '50px';
+        itemDiv.appendChild(pdfIcon);
+      } else if (file.type.startsWith('video/')) {
+        const video = document.createElement('video');
+        video.src = URL.createObjectURL(file);
+        video.style.maxWidth = '100px';
+        video.style.maxHeight = '100px';
+        video.muted = true;
+        video.playsInline = true;
+        itemDiv.appendChild(video);
+      }
+
+      const fileInfo = document.createElement('div');
+      fileInfo.className = 'file-info';
+      fileInfo.textContent = `${file.name} (${(file.size/1024).toFixed(1)} KB)`;
+      itemDiv.appendChild(fileInfo);
+
+      previewContainer.appendChild(itemDiv);
     }
 
     function updateFileInputs() {
-        // Limpar inputs de arquivo existentes
-        const form = document.getElementById('messageForm');
-        const existingInputs = form.querySelectorAll('input[type="file"]');
-        existingInputs.forEach(input => input.remove());
+      const form = document.getElementById('messageForm');
+      const existingInputs = form.querySelectorAll('input[type="file"][data-dyn="1"]');
+      existingInputs.forEach(input => input.remove());
 
-        // Adicionar novos inputs para os arquivos anexados
-        if (attachedFiles.length > 0) {
-            const lastInput = document.querySelector('input[name="file"]');
-            attachedFiles.forEach((file, index) => {
-                if (index === 0 && lastInput) {
-                    lastInput.remove();
-                }
-                const fileInput = document.createElement('input');
-                fileInput.type = 'file';
-                fileInput.name = index === 0 ? 'file' : `file${index + 1}`;
-                fileInput.className = 'd-none';
-                form.appendChild(fileInput);
-                const dataTransfer = new DataTransfer();
-                dataTransfer.items.add(file);
-                fileInput.files = dataTransfer.files;
-            });
-        }
+      // backend atual aceita apenas 1 arquivo "file". então: envia só o primeiro.
+      // (se quiser multi, a gente altera backend também)
+      if (attachedFiles.length > 0) {
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.name = 'file';
+        fileInput.className = 'd-none';
+        fileInput.setAttribute('data-dyn','1');
+        form.appendChild(fileInput);
+
+        const dt = new DataTransfer();
+        dt.items.add(attachedFiles[0]);
+        fileInput.files = dt.files;
+      }
     }
-}
+  }
 
-// Antes de enviar, copiar do editor para o textarea
-function updateHiddenTextarea() {
-    const editor = document.getElementById('messageEditor');
-    const textarea = document.getElementById('message');
-    textarea.value = editor.textContent;
-}
+  // =========================
+  // ✅ RECIPIENTS
+  // =========================
+  let recipients = [];
 
-// Recipients Management
-let recipients = [];
-
-function updateRecipientsList() {
+  function updateRecipientsList() {
     const list = document.getElementById('recipientsList');
     const hiddenInput = document.getElementById('recipients');
 
+    if (!Array.isArray(recipients)) recipients = [];
+    recipients = recipients.map(r => String(r).trim()).filter(Boolean);
+
     if (recipients.length === 0) {
-        list.innerHTML = '<div class="muted" style="color: #666666;">Nenhum destinatário adicionado</div>';
-        hiddenInput.value = '';
-        return;
+      list.innerHTML = '<div class="muted">Nenhum destinatário adicionado</div>';
+      hiddenInput.value = JSON.stringify([]);
+      return;
     }
 
     const tags = recipients.map((recipient, index) => `
-        <div class="recipient-tag">
-            ${recipient}
-            <button class="remove-tag" onclick="removeRecipient(${index})">×</button>
-        </div>
+      <div class="recipient-tag">
+        ${escapeHtml(recipient)}
+        <button type="button" class="remove-tag" data-index="${index}">×</button>
+      </div>
     `).join('');
 
-    list.innerHTML = '<div style="display: flex; flex-wrap: wrap; gap: 8px;">' + tags + '</div>';
+    list.innerHTML = `<div style="display:flex; flex-wrap:wrap; gap:8px;">${tags}</div>`;
     hiddenInput.value = JSON.stringify(recipients);
-    console.log(`Destinatários atualizados: ${recipients.length} items`);
-}
 
-function addRecipient() {
+    // bind remove
+    list.querySelectorAll('.remove-tag').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = Number(btn.getAttribute('data-index'));
+        if (!Number.isNaN(idx)) removeRecipient(idx);
+      });
+    });
+  }
+
+  function addRecipient() {
     const input = document.getElementById('recipientsInput');
     const value = input.value.trim();
-
     if (!value) {
-        showMessageModal('ERRO', 'DIGITE UM TELEFONE OU NOME DE GRUPO.', 'warning');
-        return;
+      showMessageModal('ERRO', 'DIGITE UM TELEFONE OU NOME DE GRUPO.', 'warning');
+      return;
     }
-
-    // Verificar duplicatas
     if (recipients.includes(value)) {
-        showMessageModal('AVISO', 'DESTINATÁRIO JÁ ADICIONADO.', 'warning');
-        return;
+      showMessageModal('AVISO', 'DESTINATÁRIO JÁ ADICIONADO.', 'warning');
+      return;
     }
-
     recipients.push(value);
     input.value = '';
     updateRecipientsList();
-
-    console.log(`Destinatário adicionado: ${value}`);
     input.focus();
-}
+  }
 
-function removeRecipient(index) {
-    const removed = recipients.splice(index, 1)[0];
+  function removeRecipient(index) {
+    recipients.splice(index, 1);
     updateRecipientsList();
-    console.log(`Destinatário removido: ${removed}`);
-}
+  }
 
-function importContacts() {
+  function importContacts() {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.json';
-    input.onchange = function(e) {
-        const file = e.target.files[0];
-        if (!file) return;
+    input.accept = '.json,application/json';
+    input.onchange = (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
 
-        const reader = new FileReader();
-        reader.onload = function(e) {
-            try {
-                const contacts = JSON.parse(e.target.result);
-                console.log('Arquivo JSON carregado:', contacts);
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        try {
+          const parsed = JSON.parse(ev.target.result);
 
-                let imported = 0;
-                let skipped = 0;
+          if (!Array.isArray(parsed)) {
+            throw new Error('JSON deve ser um array de contatos.');
+          }
 
-                for (const contact of contacts) {
-                    if (contact.telefones && Array.isArray(contact.telefones)) {
-                        for (const telefone of contact.telefones) {
-                            if (telefone && telefone.trim() && !recipients.includes(telefone.trim())) {
-                                recipients.push(telefone.trim());
-                                imported++;
-                            } else {
-                                skipped++;
-                            }
-                        }
-                    }
-                }
-                updateRecipientsList();
-                showMessageModal('SUCESSO', `IMPORTADO: ${imported} | IGNORADO: ${skipped}`, 'success');
-                console.log(`Contatos importados: ${imported}, ignorados: ${skipped}`);
-            } catch (error) {
-                showMessageModal('ERRO', 'FORMATO JSON INVÁLIDO. VERIFIQUE O ARQUIVO.', 'danger');
-                console.error('Erro ao parsear JSON:', error);
+          let imported = 0;
+          let skipped = 0;
+
+          for (const contact of parsed) {
+            const tels = contact?.telefones;
+            if (Array.isArray(tels)) {
+              for (const tel of tels) {
+                const t = String(tel || '').trim();
+                if (!t) { skipped++; continue; }
+                if (recipients.includes(t)) { skipped++; continue; }
+                recipients.push(t);
+                imported++;
+              }
+            } else {
+              skipped++;
             }
-        };
-        reader.readAsText(file);
+          }
+
+          updateRecipientsList();
+          showMessageModal('SUCESSO', `IMPORTADO: ${imported} | IGNORADO: ${skipped}`, 'success');
+        } catch (err) {
+          console.error(err);
+          showMessageModal('ERRO', 'FORMATO JSON INVÁLIDO. VERIFIQUE O ARQUIVO.', 'danger');
+        }
+      };
+      reader.readAsText(file, 'utf-8');
     };
     input.click();
-}
+  }
 
-// Progress Bar Functions
-function showProgress() {
-    document.getElementById('progressContainer').style.display = 'block';
-}
+  // =========================
+  // ✅ PROGRESS
+  // =========================
+  function showProgress(){ document.getElementById('progressContainer').style.display = 'block'; }
+  function hideProgress(){ document.getElementById('progressContainer').style.display = 'none'; }
+  function updateProgress(current, total, text=null){
+    const bar = document.getElementById('progressBar');
+    const label = document.getElementById('progressText');
+    const pct = total>0 ? Math.round((current/total)*100) : 0;
+    bar.style.width = pct + '%';
+    label.textContent = text ? text : `${current}/${total} (${pct}%)`;
+    if (current >= total) setTimeout(hideProgress, 1500);
+  }
 
-function hideProgress() {
-    document.getElementById('progressContainer').style.display = 'none';
-}
-
-function updateProgress(current, total, text = null) {
-    const progressBar = document.getElementById('progressBar');
-    const progressText = document.getElementById('progressText');
-
-    const percentage = total > 0 ? Math.round((current / total) * 100) : 0;
-    progressBar.style.width = percentage + '%';
-
-    if (text) {
-        progressText.textContent = text;
-    } else {
-        progressText.textContent = `${current}/${total} (${percentage}%)`;
-    }
-
-    if (current >= total) {
-        setTimeout(() => hideProgress(), 2000);
-    }
-}
-
-document.addEventListener('DOMContentLoaded', async () => {
+  // =========================
+  // ✅ INIT
+  // =========================
+  document.addEventListener('DOMContentLoaded', async () => {
     await loadStatus();
     connectWebSocket();
 
-    // Inicializar funcionalidades
     initEmojiPicker();
     initDragDrop();
+    updateRecipientsList();
 
-    // Event listeners para formatação
-    document.getElementById('boldBtn').addEventListener('click', () => formatText('*'));
-    document.getElementById('italicBtn').addEventListener('click', () => formatText('_'));
+    // format buttons
+    document.getElementById('boldBtn').addEventListener('click', () => wrapSelection('*','*'));
+    document.getElementById('italicBtn').addEventListener('click', () => wrapSelection('_','_'));
 
-    // Event listeners para destinatários
+    // recipients
     document.getElementById('addRecipientBtn').addEventListener('click', addRecipient);
     document.getElementById('importContactsBtn').addEventListener('click', importContacts);
 
-    // Enter em input para adicionar
     document.getElementById('recipientsInput').addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            addRecipient();
-        }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        addRecipient();
+      }
     });
 
-    document.getElementById('btnRefreshQR').addEventListener('click', async () => {
-        await fetchAndShowQr();
-    });
+    document.getElementById('btnRefreshQR').addEventListener('click', fetchAndShowQr);
 
-    // Atualizar textarea antes de enviar
+    // submit
     document.getElementById('messageForm').addEventListener('submit', async function(event) {
-        updateHiddenTextarea();
-        // Remover placeholder se vazio
-        if (!document.getElementById('message').value.trim()) {
-            event.preventDefault();
-            showMessageModal('ERRO', 'A MENSAGEM NÃO PODE SER VAZIA.', 'danger');
-            return;
+      event.preventDefault();
+
+      updateHiddenTextarea();
+
+      // valida msg
+      const msg = document.getElementById('message').value.trim();
+      if (!msg) {
+        showMessageModal('ERRO', 'A MENSAGEM NÃO PODE SER VAZIA.', 'danger');
+        return;
+      }
+
+      // valida recipients
+      const recHidden = document.getElementById('recipients').value || '[]';
+      let recArr = [];
+      try { recArr = JSON.parse(recHidden); } catch {}
+      if (!Array.isArray(recArr) || recArr.length === 0) {
+        showMessageModal('ERRO', 'ADICIONE AO MENOS 1 DESTINATÁRIO.', 'danger');
+        return;
+      }
+
+      const form = this;
+      const formData = new FormData(form);
+
+      const submitButton = document.getElementById('btnSend');
+      submitButton.disabled = true;
+      const original = submitButton.textContent;
+      submitButton.textContent = 'ENVIANDO...';
+
+      try {
+        const resp = await fetch('/api/send', { method:'POST', body: formData });
+        const data = await resp.json().catch(() => null);
+
+        submitButton.disabled = false;
+        submitButton.textContent = original;
+
+        if (data && data.status === 'success') {
+          showMessageModal('SUCESSO', data.message || 'MENSAGEM ENVIADA COM SUCESSO!', 'success');
+          form.reset();
+          document.getElementById('messageEditor').innerText = '';
+          document.getElementById('filePreview').innerHTML = '';
+          attachedFiles = [];
+          recipients = [];
+          updateRecipientsList();
+        } else {
+          const msg = (data && (data.message || data.error)) ? (data.message || data.error) : 'FALHA AO ENVIAR.';
+          showMessageModal('ERRO', 'ERRO AO ENVIAR MENSAGEM: ' + msg, 'danger');
+          console.error('Resposta:', data);
         }
-
-        event.preventDefault();
-
-        const form = this;
-        const formData = new FormData(form);
-
-        // Adicionar arquivos anexados se não foram
-        if (attachedFiles.length === 0) {
-            const oldFileInput = document.querySelector('input[name="file"]');
-            if (oldFileInput) formData.delete('file');
-        }
-
-        const submitButton = document.getElementById('btnSend');
-        submitButton.disabled = true;
-        const original = submitButton.textContent;
-        submitButton.textContent = 'ENVIANDO...';
-
-        try {
-            // 🔥 IMPORTANTE: backend precisa aceitar multipart:
-            // - recipients/message virão em req.body como string (express-fileupload + urlencoded/json podem não pegar multipart)
-            // se o seu backend atual só lê JSON, ele vai falhar.
-            const resp = await fetch('/api/send', { method: 'POST', body: formData });
-            const data = await resp.json().catch(() => null);
-
-            submitButton.disabled = false;
-            submitButton.textContent = original;
-
-            if (data && data.status === 'success') {
-                showMessageModal('SUCESSO', 'MENSAGEM ENVIADA COM SUCESSO!', 'success');
-                // Limpar formulário
-                form.reset();
-                document.getElementById('messageEditor').textContent = '';
-                document.getElementById('filePreview').innerHTML = '';
-                attachedFiles = [];
-            } else {
-                const msg = (data && (data.message || data.error)) ? (data.message || data.error) : 'FALHA AO ENVIAR.';
-                showMessageModal('ERRO', 'ERRO AO ENVIAR MENSAGEM: ' + msg, 'danger');
-                console.error('Resposta:', data);
-            }
-        } catch (err) {
-            submitButton.disabled = false;
-            submitButton.textContent = original;
-            console.error('Erro ao enviar:', err);
-            showMessageModal('ERRO', 'ERRO AO ENVIAR MENSAGEM.', 'danger');
-        }
+      } catch (err) {
+        submitButton.disabled = false;
+        submitButton.textContent = original;
+        console.error('Erro ao enviar:', err);
+        showMessageModal('ERRO', 'ERRO AO ENVIAR MENSAGEM.', 'danger');
+      }
     });
-});
+  });
 </script>
-
 </body>
 </html>
