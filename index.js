@@ -204,6 +204,12 @@ function registerClientEvents() {
 createClient();
 client.initialize();
 
+app.get('/config.js', (req, res) => {
+  const wsPort = process.env.WS_PORT || 8080;
+  res.setHeader('Content-Type', 'application/javascript');
+  res.send(`window.__WS_PORT__ = ${JSON.stringify(wsPort)};`);
+});
+
 // ===== Rotas =====
 
 app.get('/', (req, res) => {
