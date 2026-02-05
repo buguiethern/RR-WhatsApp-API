@@ -1,3 +1,4 @@
+// server/index.js
 'use strict';
 
 require('dotenv').config();
@@ -45,11 +46,11 @@ app.use((req, res, next) => {
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json({ limit: '25mb' }));
 app.use(express.static('public'));
-app.use(fileUpload());
 
-/* =========================
-   WS
-========================= */
+// ✅ importante: pra multipart + texto vir em req.body
+app.use(fileUpload({ createParentPath: true, limits: { fileSize: 25 * 1024 * 1024 } }));
+
+// ===== WebSocket
 const wsPort = Number(process.env.WS_PORT || 8080);
 const wss = new WebSocket.Server({ port: wsPort });
 
@@ -69,7 +70,6 @@ function broadcast(obj) {
 
 wss.on('connection', function connection(ws, req) {
   const cleanedIP = getClientIPWS(req);
-
   if (!ipRangeCheck(cleanedIP, allowedIPs)) {
     const xff = (req.headers['x-forwarded-for'] || '').toString();
     console.log(`[WS BLOCK] ip=${cleanedIP} xff=${xff}`);
@@ -83,9 +83,7 @@ wss.on('connection', function connection(ws, req) {
   else ws.send(JSON.stringify({ type: 'status', authenticated: waState.authenticated, state: waState.lastKnownState }));
 });
 
-/* =========================
-   WA STATE
-========================= */
+// ===== WhatsApp state
 const waState = {
   client: null,
   qrCodeData: null,
@@ -138,16 +136,12 @@ async function withTimeout(promise, ms, label) {
 }
 
 function safeRmDir(dir) {
-  try {
-    if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
-  } catch (e) {
-    console.log('[WARN] Falha ao remover dir:', dir, e?.message || e);
-  }
+  try { if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true }); }
+  catch (e) { console.log('[WARN] Falha ao remover dir:', dir, e?.message || e); }
 }
 
 function getPuppeteerOptions() {
   const executablePath = process.env.CHROME_PATH || process.env.PUPPETEER_EXECUTABLE_PATH || undefined;
-
   const args = [
     '--no-sandbox',
     '--disable-setuid-sandbox',
@@ -164,26 +158,17 @@ function getPuppeteerOptions() {
     '--metrics-recording-only',
     '--mute-audio',
   ];
-
   if ((process.env.WA_SINGLE_PROCESS || '').toLowerCase() === 'true') args.push('--single-process');
-
-  return {
-    headless: true,
-    args,
-    defaultViewport: null,
-    timeout: 0,
-    executablePath,
-  };
+  return { headless: true, args, defaultViewport: null, timeout: 0, executablePath };
 }
 
 function buildClient() {
-  const client = new Client({
+  return new Client({
     authStrategy: new LocalAuth({ dataPath: SESSION_DIR }),
     puppeteer: getPuppeteerOptions(),
     takeoverOnConflict: true,
     takeoverTimeoutMs: 3000,
   });
-  return client;
 }
 
 function setState(nextState) {
@@ -363,6 +348,7 @@ function registerClientEvents(client) {
   });
 }
 
+// Watchdog
 let watchdogTimer = null;
 async function watchdogTick() {
   if (!waState.client) return;
@@ -399,6 +385,7 @@ function startWatchdog() {
 }
 function stopWatchdog() { if (watchdogTimer) clearInterval(watchdogTimer); watchdogTimer = null; }
 
+// init WA
 (async () => {
   startWatchdog();
   await startClient({ reason: 'boot' });
@@ -407,31 +394,22 @@ function stopWatchdog() { if (watchdogTimer) clearInterval(watchdogTimer); watch
   await restartClient({ reason: 'boot_fail', wipeSession: false, doLogout: false });
 });
 
-/* =========================
-   CONFIG
-========================= */
+// ===== Public config
 app.get('/config.js', (req, res) => {
   const wsPort = process.env.WS_PORT || 8080;
   res.setHeader('Content-Type', 'application/javascript');
   res.send(`window.__WS_PORT__ = ${JSON.stringify(wsPort)};`);
 });
 
-/* =========================
-   ROUTES
-========================= */
+// ===== Rotas
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 app.get('/api/qr', async (req, res) => {
   try {
-    if (waState.authenticated && waState.client) {
-      return res.json({ status: 'connected', message: 'Cliente já está conectado' });
-    }
-
-    if (!waState.qrCodeData) {
-      return res.json({ status: 'waiting', message: 'QR Code ainda não foi gerado, tente novamente em alguns segundos' });
-    }
+    if (waState.authenticated && waState.client) return res.json({ status: 'connected', message: 'Cliente já está conectado' });
+    if (!waState.qrCodeData) return res.json({ status: 'waiting', message: 'QR Code ainda não foi gerado, tente novamente em alguns segundos' });
 
     const qrCodeImage = await QRCode.toDataURL(waState.qrCodeData);
     const base64Data = qrCodeImage.replace(/^data:image\/png;base64,/, '');
@@ -442,7 +420,6 @@ app.get('/api/qr', async (req, res) => {
       'Content-Length': imgBuffer.length,
       'Cache-Control': 'no-store',
     });
-
     return res.end(imgBuffer);
   } catch (err) {
     console.log('[ERR] /api/qr:', err?.message || err);
@@ -489,140 +466,45 @@ app.get('/api/reset', async (req, res) => {
   }
 });
 
-/* =========================
-   HELPERS (RECIPIENTS + TEMPLATE + LINES)
-========================= */
 async function assertConnectedOrThrow() {
   const c = waState.client;
   if (!c) throw new Error('Cliente não inicializado.');
+
   const st = await c.getState();
   if (st !== 'CONNECTED') throw new Error(`Cliente não conectado (state=${st}).`);
+
   if (!waState.authenticated) waState.authenticated = true;
 }
 
-function sanitizeKey(k) {
-  return String(k || '')
-    .trim()
-    .toLowerCase()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
-    .replace(/[^\w]+/g, '_')
-    .replace(/^_+|_+$/g,'');
+function normalizeNewlines(s) {
+  let t = String(s ?? '');
+  t = t.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  t = t.replace(/\u2028|\u2029/g, '\n');
+  t = t.replace(/\u00A0/g, ' ');
+  t = t.replace(/[ \t]+\n/g, '\n');
+  return t;
 }
 
-function firstName(full) {
-  const s = String(full || '').trim();
-  if (!s) return '';
-  return s.split(/\s+/)[0];
-}
+// ✅ template $variavel -> valor
+function applyTemplateVars(text, vars) {
+  const src = normalizeNewlines(text);
 
-// ✅ quebra de linha garantida no backend também
-function normalizeMessageNewlines(msg) {
-  let s = String(msg ?? '');
-  s = s.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  // se por algum motivo vier <br> em string
-  s = s.replace(/<br\s*\/?>/gi, '\n');
-  return s;
-}
-
-// ✅ template dinâmico: qualquer chave vira $chave e {{chave}}
-function applyTemplateDynamic(template, varsObj) {
-  let out = String(template ?? '');
-  out = normalizeMessageNewlines(out);
-
-  const flat = {};
-  for (const [k, v] of Object.entries(varsObj || {})) {
-    flat[sanitizeKey(k)] = (v === null || v === undefined) ? '' : String(v);
+  const dict = {};
+  if (vars && typeof vars === 'object') {
+    for (const [k, v] of Object.entries(vars)) {
+      const key = String(k || '').trim().toLowerCase();
+      if (!key) continue;
+      if (v === null || v === undefined) continue;
+      dict[key] = (typeof v === 'string') ? v : String(v);
+    }
   }
 
-  // $chave
-  out = out.replace(/\$([a-zA-Z0-9_]+)/g, (_, key) => {
-    const kk = sanitizeKey(key);
-    return Object.prototype.hasOwnProperty.call(flat, kk) ? flat[kk] : '';
+  // $nome, $email, $telefone, etc
+  return src.replace(/\$([a-zA-Z0-9_]+)/g, (m, k) => {
+    const key = String(k).toLowerCase();
+    return (dict[key] !== undefined) ? dict[key] : m;
   });
-
-  // {{chave}}
-  out = out.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_, key) => {
-    const kk = sanitizeKey(key);
-    return Object.prototype.hasOwnProperty.call(flat, kk) ? flat[kk] : '';
-  });
-
-  return out;
 }
-
-function parseRecipientsField(recipientsField) {
-  if (Array.isArray(recipientsField)) return recipientsField.filter(Boolean);
-
-  const raw = String(recipientsField ?? '').trim();
-  if (!raw) return [];
-
-  if (raw.startsWith('[') || raw.startsWith('{')) {
-    try {
-      const parsed = JSON.parse(raw);
-
-      const arr = Array.isArray(parsed) ? parsed
-        : Array.isArray(parsed?.recipients) ? parsed.recipients
-        : [];
-
-      return arr
-        .map(item => {
-          if (!item) return null;
-          if (typeof item === 'string') {
-            return { name: null, phone: item, group: null, meta: {} };
-          }
-
-          const name = (item.name ?? item.nome ?? '').toString().trim() || null;
-          const phone = (item.phone ?? item.telefone ?? item.tel ?? '').toString().trim() || null;
-          const group = (item.group ?? item.grupo ?? '').toString().trim() || null;
-
-          // meta pode vir do front
-          const meta = (item.meta && typeof item.meta === 'object') ? item.meta : {};
-
-          return { name, phone, group, meta };
-        })
-        .filter(Boolean);
-    } catch {
-      // cai pro CSV
-    }
-  }
-
-  return raw
-    .split(',')
-    .map(s => s.trim())
-    .filter(Boolean)
-    .map(x => ({ name: null, phone: x, group: null, meta: {} }));
-}
-
-function normalizeRecipientToChatId(raw) {
-  const recipientTrimmed = (raw || '').trim();
-  if (!recipientTrimmed) return null;
-
-  if (/^\+?\d+$/.test(recipientTrimmed)) {
-    let number = recipientTrimmed.replace(/\D/g, '');
-    if (number.startsWith('55') && number.length === 13) {
-      number = number.slice(0, 4) + number.slice(5);
-    }
-    return number + '@c.us';
-  }
-  return { groupName: recipientTrimmed };
-}
-
-function formatPhoneNumberBrazil(phone) {
-  if (!phone) return '';
-  let cleanPhone = phone.replace(/\D/g, '');
-  if (cleanPhone.startsWith('55') && cleanPhone.length > 2) cleanPhone = cleanPhone.substring(2);
-  if (!phone.startsWith('+')) cleanPhone = '55' + cleanPhone;
-
-  if (cleanPhone.length === 13 && cleanPhone.substring(0, 2) === '55') {
-    const ddd = cleanPhone.substring(2, 4);
-    const numero = cleanPhone.substring(4);
-    if (numero.length === 9 && numero.startsWith('9')) {
-      cleanPhone = '55' + ddd + numero.substring(1);
-    }
-  }
-  return cleanPhone;
-}
-
-const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 const sendMessageWithTimeout = async (chatId, message, file, timeout = 25000) => {
   const c = waState.client;
@@ -633,17 +515,24 @@ const sendMessageWithTimeout = async (chatId, message, file, timeout = 25000) =>
       const imageRegex = /\[img\s*=\s*(https?:\/\/[^\s]+)\]/i;
       const pdfRegex = /\[pdf\s*=\s*(https?:\/\/[^\s]+)\]/i;
 
-      let match = (message || '').match(imageRegex);
+      // ✅ NÃO faça .trim() aqui pra não matar \n
+      const msg = normalizeNewlines(message);
+
+      let match = (msg || '').match(imageRegex);
       if (match) {
-        const media = await MessageMedia.fromUrl(match[1]);
-        await c.sendMessage(chatId, media, { caption: (message || '').replace(imageRegex, '').trim() });
+        const imageUrl = match[1];
+        const media = await MessageMedia.fromUrl(imageUrl);
+        const caption = (msg || '').replace(imageRegex, '');
+        await c.sendMessage(chatId, media, { caption: caption });
         return;
       }
 
-      match = (message || '').match(pdfRegex);
+      match = (msg || '').match(pdfRegex);
       if (match) {
-        const media = await MessageMedia.fromUrl(match[1]);
-        await c.sendMessage(chatId, media, { caption: (message || '').replace(pdfRegex, '').trim() });
+        const pdfUrl = match[1];
+        const media = await MessageMedia.fromUrl(pdfUrl);
+        const caption = (msg || '').replace(pdfRegex, '');
+        await c.sendMessage(chatId, media, { caption: caption });
         return;
       }
 
@@ -654,68 +543,149 @@ const sendMessageWithTimeout = async (chatId, message, file, timeout = 25000) =>
 
         try {
           const media = MessageMedia.fromFilePath(filePath);
-          await c.sendMessage(chatId, media, { caption: message || '' });
+          await c.sendMessage(chatId, media, { caption: msg || '' });
         } finally {
           fs.unlink(filePath, () => {});
         }
         return;
       }
 
-      await c.sendMessage(chatId, message || '');
+      await c.sendMessage(chatId, msg || '');
     })(),
     timeout,
     'sendMessageWithTimeout'
   );
 };
 
-/* =========================
-   SEND
-========================= */
+function normalizeRecipientToChatId(raw) {
+  const recipientTrimmed = (raw || '').trim();
+  if (!recipientTrimmed) return null;
+
+  if (/^\+?\d+$/.test(recipientTrimmed.replace(/\D/g,''))) {
+    let number = recipientTrimmed.replace(/\D/g, '');
+
+    // remove nono dígito (BR) se for 55 + DDD + 9xxxxxxxx (13)
+    if (number.startsWith('55') && number.length === 13) {
+      number = number.slice(0, 4) + number.slice(5);
+    }
+    return number + '@c.us';
+  }
+
+  return { groupName: recipientTrimmed };
+}
+
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+function formatPhoneNumberBrazil(phone) {
+  if (!phone) return '';
+
+  let cleanPhone = String(phone).replace(/\D/g, '');
+  if (cleanPhone.startsWith('55') && cleanPhone.length > 2) cleanPhone = cleanPhone.substring(2);
+
+  // coloca 55
+  cleanPhone = '55' + cleanPhone;
+
+  // remove 9o dígito se for 55 + DDD + 9xxxxxxxx
+  if (cleanPhone.length === 13 && cleanPhone.startsWith('55')) {
+    const ddd = cleanPhone.substring(2, 4);
+    const numero = cleanPhone.substring(4);
+    if (numero.length === 9 && numero.startsWith('9')) {
+      cleanPhone = '55' + ddd + numero.substring(1);
+    }
+  }
+
+  return cleanPhone;
+}
+
+// ✅ parse recipients vindo do form-data:
+// - pode ser string JSON de array
+// - pode ser array (quando envia via JSON)
+// - pode ser string "a,b,c" (fallback)
+function parseRecipientsField(recipientsField) {
+  if (recipientsField === undefined || recipientsField === null) return [];
+
+  // se já veio array
+  if (Array.isArray(recipientsField)) return recipientsField;
+
+  const s = String(recipientsField).trim();
+  if (!s) return [];
+
+  // tenta JSON
+  if ((s.startsWith('[') && s.endsWith(']')) || (s.startsWith('{') && s.endsWith('}'))) {
+    try {
+      const parsed = JSON.parse(s);
+      if (Array.isArray(parsed)) return parsed;
+      return [parsed];
+    } catch {
+      // cai pro split
+    }
+  }
+
+  // fallback: "a,b,c"
+  return s.split(',').map(x => x.trim()).filter(Boolean);
+}
+
 app.post('/api/send', async (req, res) => {
   const startTime = new Date();
   console.log(`[${startTime.toISOString()}] [HTTP] /api/send - Iniciando envio`);
 
   try {
-    const recipientsRaw = req.body.recipients;
-    let messageTemplate = req.body.message;
-    const delaySec = req.body.delay ?? 1.2;
-    const country = req.body.country ?? 'BR';
-    const file = req.files ? req.files.file : null;
+    const delaySec = (req.body && req.body.delay !== undefined) ? req.body.delay : 1.2;
+    const country = (req.body && req.body.country) ? String(req.body.country) : 'BR';
 
-    if (!recipientsRaw || !messageTemplate) {
+    // ✅ message com quebras preservadas
+    const messageRaw = normalizeNewlines(req.body?.message ?? '');
+
+    // ✅ recipients em JSON (objetos)
+    const recipientsRaw = parseRecipientsField(req.body?.recipients);
+
+    const file = req.files ? (req.files.file || null) : null;
+
+    if (!recipientsRaw.length || !messageRaw) {
       return res.status(400).json({ status: 'error', message: 'Campos obrigatórios: recipients, message' });
     }
 
     await assertConnectedOrThrow();
 
-    // ✅ parseia recipients como objeto com meta
-    let recipientObjs = parseRecipientsField(recipientsRaw);
-
-    // ✅ formata telefones BR e normaliza
-    recipientObjs = recipientObjs.map(r => {
-      const out = {
-        name: r.name ?? null,
-        phone: r.phone ?? null,
-        group: r.group ?? null,
-        meta: (r.meta && typeof r.meta === 'object') ? r.meta : {},
-      };
-
-      if (out.phone) {
-        if (country === 'BR') out.phone = formatPhoneNumberBrazil(out.phone);
-        out.phone = String(out.phone).trim();
+    // ✅ transforma recipients em lista final:
+    // item pode ser:
+    //  - string (telefone/grupo)
+    //  - { raw, label, vars } (do front)
+    //  - { telefone, nome, email, ... } (se alguém mandar direto)
+    const recipientList = recipientsRaw.map((it) => {
+      if (typeof it === 'string') {
+        return { raw: it.trim(), vars: {} };
       }
-      if (out.group) out.group = String(out.group).trim();
-      if (out.name) out.name = String(out.name).trim();
+      if (it && typeof it === 'object') {
+        if (it.raw) return { raw: String(it.raw).trim(), vars: (it.vars && typeof it.vars === 'object') ? it.vars : {} };
 
-      // normaliza meta
-      const meta2 = {};
-      for (const [k, v] of Object.entries(out.meta || {})) {
-        meta2[sanitizeKey(k)] = (v === null || v === undefined) ? '' : String(v);
+        // se veio tipo contato direto
+        if (it.telefone) {
+          const vars = { ...it };
+          return { raw: String(it.telefone).trim(), vars };
+        }
       }
-      out.meta = meta2;
+      return null;
+    }).filter(Boolean);
 
-      return out;
-    });
+    if (!recipientList.length) {
+      return res.status(400).json({ status: 'error', message: 'Nenhum destinatário válido.' });
+    }
+
+    // formata telefones BR (apenas se parecer número)
+    if (country === 'BR') {
+      for (const r of recipientList) {
+        const digits = String(r.raw || '').replace(/\D/g,'');
+        if (digits.length >= 8) {
+          const formatted = formatPhoneNumberBrazil(r.raw);
+          // mantém vars.telefone com o original e o formatado também
+          if (!r.vars) r.vars = {};
+          if (!r.vars.telefone) r.vars.telefone = r.raw;
+          r.vars.telefone_formatado = formatted;
+          r.raw = formatted;
+        }
+      }
+    }
 
     const delayMs = Math.max(0, Math.min(Number(delaySec) * 1000, 60000));
 
@@ -729,66 +699,68 @@ app.post('/api/send', async (req, res) => {
     let errorCount = 0;
     const errors = [];
 
-    broadcast({ type: 'send_progress', total: recipientObjs.length, current: 0, step: 'starting' });
+    broadcast({ type: 'send_progress', total: recipientList.length, current: 0, step: 'starting' });
 
     await enqueueSend(async () => {
-      broadcast({ type: 'send_progress', total: recipientObjs.length, current: 0, step: 'sending' });
+      broadcast({ type: 'send_progress', total: recipientList.length, current: 0, step: 'sending' });
 
-      for (let i = 0; i < recipientObjs.length; i++) {
-        const r = recipientObjs[i];
+      for (let i = 0; i < recipientList.length; i++) {
+        const entry = recipientList[i];
+        const recipient = entry.raw;
         const progressCurrent = i + 1;
-        const label = r.group ? `GRUPO: ${r.group}` : (r.phone || '');
 
-        broadcast({ type: 'send_progress', total: recipientObjs.length, current: progressCurrent, recipient: label });
+        broadcast({ type: 'send_progress', total: recipientList.length, current: progressCurrent, recipient });
 
         try {
-          // ✅ vars dinâmicas: name/phone + meta (qualquer campo do JSON)
-          const vars = {
-            nome: r.name || '',
-            primeiro_nome: firstName(r.name || ''),
-            telefone: r.phone || '',
-            ...r.meta, // <- qualquer chave vira variável
-          };
+          const parsed = normalizeRecipientToChatId(recipient);
+          if (!parsed) {
+            errorCount++;
+            errors.push({ recipient, error: 'Destinatário inválido' });
+            continue;
+          }
 
-          // ✅ normaliza quebra de linha e aplica template
-          let finalMessage = applyTemplateDynamic(messageTemplate, vars);
-          finalMessage = normalizeMessageNewlines(finalMessage);
+          // ✅ aplica variáveis por destinatário SEM destruir \n
+          const vars = entry.vars || {};
+          // compat: se tiver nome/email no root do vars
+          // também injeta $telefone e $grupo
+          const mergedVars = { ...vars };
 
-          // destino (grupo ou telefone)
-          if (r.group) {
+          // se for telefone, deixa $telefone sempre
+          if (!mergedVars.telefone) mergedVars.telefone = recipient;
+
+          let finalMessage = messageRaw;
+
+          if (typeof parsed === 'string') {
+            finalMessage = applyTemplateVars(finalMessage, mergedVars);
+            await sendMessageWithTimeout(parsed, finalMessage, file);
+            successCount++;
+          } else {
             const chats = await getChatsCached();
-            const group = chats.find(chat => chat.isGroup && chat.name === r.group);
+            const group = chats.find(chat => chat.isGroup && chat.name === parsed.groupName);
             if (!group) {
               errorCount++;
-              errors.push({ recipient: label, error: `Grupo não encontrado: ${r.group}` });
+              errors.push({ recipient, error: `Grupo não encontrado: ${parsed.groupName}` });
             } else {
+              mergedVars.grupo = parsed.groupName;
+              finalMessage = applyTemplateVars(finalMessage, mergedVars);
               await sendMessageWithTimeout(group.id._serialized, finalMessage, file);
-              successCount++;
-            }
-          } else {
-            const parsed = normalizeRecipientToChatId(String(r.phone || '').replace(/\D/g, ''));
-            if (!parsed || typeof parsed !== 'string') {
-              errorCount++;
-              errors.push({ recipient: label, error: 'Destinatário inválido' });
-            } else {
-              await sendMessageWithTimeout(parsed, finalMessage, file);
               successCount++;
             }
           }
 
-          if (i < recipientObjs.length - 1 && delayMs > 0) await delay(delayMs);
+          if (i < recipientList.length - 1 && delayMs > 0) await delay(delayMs);
 
         } catch (sendError) {
           const errorMsg = sendError?.message || String(sendError);
           errorCount++;
-          errors.push({ recipient: label, error: errorMsg });
+          errors.push({ recipient, error: errorMsg });
         }
       }
 
       broadcast({
         type: 'send_progress',
-        total: recipientObjs.length,
-        current: recipientObjs.length,
+        total: recipientList.length,
+        current: recipientList.length,
         step: 'completed',
         success: successCount,
         errors: errorCount
@@ -807,7 +779,7 @@ app.post('/api/send', async (req, res) => {
 
   } catch (err) {
     const msg = err?.message || String(err);
-    console.log('[ERROR] /api/send:', msg);
+    console.log('[ERR] /api/send:', msg);
 
     const low = msg.toLowerCase();
     if (low.includes('session closed') || low.includes('target closed') || low.includes('browser') || low.includes('protocol error')) {
@@ -818,19 +790,16 @@ app.post('/api/send', async (req, res) => {
   }
 });
 
-/* =========================
-   OPTIONAL: sendMessage URL route
-========================= */
 app.get('/api/sendMessage/:recipient/:message', async (req, res) => {
   try {
     await assertConnectedOrThrow();
 
     const recipientParam = (req.params.recipient || '').trim();
-    const message = decodeURIComponent(req.params.message || '');
+    const message = normalizeNewlines(decodeURIComponent(req.params.message || ''));
 
     if (!recipientParam) return res.status(400).json({ status: 'error', message: 'recipient obrigatório' });
 
-    let chatIdOrGroup = normalizeRecipientToChatId(recipientParam.replace(/\D/g, ''));
+    let chatIdOrGroup = normalizeRecipientToChatId(recipientParam);
     if (!chatIdOrGroup) return res.status(400).json({ status: 'error', message: 'recipient inválido' });
 
     if (typeof chatIdOrGroup !== 'string') {
@@ -840,9 +809,9 @@ app.get('/api/sendMessage/:recipient/:message', async (req, res) => {
       chatIdOrGroup = group.id._serialized;
     }
 
-    await enqueueSend(async () => { await sendMessageWithTimeout(chatIdOrGroup, normalizeMessageNewlines(message), null); });
-    return res.status(200).json({ status: 'success', message: 'Mensagem enfileirada/enviada!' });
+    await enqueueSend(async () => { await sendMessageWithTimeout(chatIdOrGroup, message, null); });
 
+    return res.status(200).json({ status: 'success', message: 'Mensagem enfileirada/enviada!' });
   } catch (err) {
     const msg = err?.message || String(err);
     console.log('[ERR] /api/sendMessage:', msg);
@@ -856,17 +825,11 @@ app.get('/api/sendMessage/:recipient/:message', async (req, res) => {
   }
 });
 
-/* =========================
-   SERVER START
-========================= */
 app.listen(port, () => {
   console.log(`[HTTP] API rodando na porta ${port}`);
   console.log(`[WS] WS rodando na porta ${wsPort}`);
 });
 
-/* =========================
-   SHUTDOWN
-========================= */
 async function shutdown(sig) {
   console.log(`[SYS] shutdown (${sig})`);
   stopWatchdog();
@@ -881,10 +844,12 @@ async function shutdown(sig) {
 
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
+
 process.on('uncaughtException', (err) => {
   console.log('[SYS] uncaughtException:', err?.message || err);
   restartClient({ reason: 'uncaughtException', wipeSession: false, doLogout: false }).catch(() => {});
 });
+
 process.on('unhandledRejection', (err) => {
   console.log('[SYS] unhandledRejection:', err?.message || err);
   restartClient({ reason: 'unhandledRejection', wipeSession: false, doLogout: false }).catch(() => {});
