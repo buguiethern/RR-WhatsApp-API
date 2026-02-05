@@ -166,6 +166,7 @@ function getPuppeteerOptions() {
     '--disable-default-apps',
     '--metrics-recording-only',
     '--mute-audio',
+    '--user-data-dir=/tmp/whatsapp_browser',
   ];
   if ((process.env.WA_SINGLE_PROCESS || '').toLowerCase() === 'true') args.push('--single-process');
   return { headless: true, args, defaultViewport: null, timeout: 0, executablePath };
