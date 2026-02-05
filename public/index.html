@@ -754,17 +754,30 @@
   }
 
   function addRecipient() {
+    console.log('[DEBUG] addRecipient called');
     const input = document.getElementById('recipientsInput');
     const value = input.value.trim();
+    console.log('[DEBUG] input value:', value);
 
     if (!value) {
-      showMessageModal('ERRO', 'DIGITE UM TELEFONE OU NOME DE GRUPO.', 'warning');
+      console.log('[DEBUG] showing empty field modal');
+      try {
+        showMessageModal('ERRO', 'DIGITE UM TELEFONE OU NOME DE GRUPO.', 'warning');
+      } catch (e) {
+        console.error('[DEBUG] error showing modal:', e);
+      }
       return;
     }
 
     const ok = addRecipientFromRaw(value, {});
+    console.log('[DEBUG] addRecipientFromRaw returned:', ok);
     if (!ok) {
-      showMessageModal('AVISO', 'DESTINATÁRIO JÁ ADICIONADO OU INVÁLIDO.', 'warning');
+      console.log('[DEBUG] showing duplicate modal');
+      try {
+        showMessageModal('AVISO', 'DESTINATÁRIO JÁ ADICIONADO OU INVÁLIDO.', 'warning');
+      } catch (e) {
+        console.error('[DEBUG] error showing modal:', e);
+      }
       return;
     }
 
@@ -792,14 +805,21 @@
   }
 
   function importContacts() {
+    console.log('[DEBUG] importContacts called');
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
     fileInput.accept = 'application/json,.json';
     fileInput.style.display = 'none';
+    console.log('[DEBUG] created file input');
 
     fileInput.addEventListener('change', () => {
+      console.log('[DEBUG] file input change event fired');
       const file = fileInput.files && fileInput.files[0];
-      if (!file) return;
+      console.log('[DEBUG] selected file:', file);
+      if (!file) {
+        console.log('[DEBUG] no file selected');
+        return;
+      }
 
       const reader = new FileReader();
       reader.onload = () => {
@@ -852,8 +872,13 @@
     });
 
     document.body.appendChild(fileInput);
+    console.log('[DEBUG] appended fileInput to body, clicking...');
     fileInput.click();
-    setTimeout(() => fileInput.remove(), 2000);
+    console.log('[DEBUG] fileInput.click() called');
+    setTimeout(() => {
+      fileInput.remove();
+      console.log('[DEBUG] removed fileInput');
+    }, 2000);
   }
 
   // ===== PROGRESS =====
