@@ -594,10 +594,9 @@ function normalizeRecipientToChatId(raw) {
   if (/^\+?\d+$/.test(recipientTrimmed.replace(/\D/g,''))) {
     let number = recipientTrimmed.replace(/\D/g, '');
 
-    // remove nono dígito (BR) se for 55 + DDD + 9xxxxxxxx (13)
-    if (number.startsWith('55') && number.length === 13) {
-      number = number.slice(0, 4) + number.slice(5);
-    }
+    // Removed the code that removes the 9 digit for Brazilian mobile numbers
+    // to accommodate modern 9-digit mobile plans introduced in 2016
+
     return number + '@c.us';
   }
 
@@ -614,13 +613,8 @@ function formatPhoneNumberBrazil(phone) {
 
   cleanPhone = '55' + cleanPhone;
 
-  if (cleanPhone.length === 13 && cleanPhone.startsWith('55')) {
-    const ddd = cleanPhone.substring(2, 4);
-    const numero = cleanPhone.substring(4);
-    if (numero.length === 9 && numero.startsWith('9')) {
-      cleanPhone = '55' + ddd + numero.substring(1);
-    }
-  }
+  // Removed the code that removes the 9 digit for Brazilian mobile numbers
+  // to accommodate modern 9-digit mobile plans introduced in 2016
 
   return cleanPhone;
 }
