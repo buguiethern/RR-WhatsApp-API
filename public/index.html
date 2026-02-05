@@ -7,19 +7,18 @@
   <!-- Bootstrap 5 CSS -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
 
-  <!-- Emoji Picker -->
-  <link href="https://cdn.jsdelivr.net/npm/emoji-picker-element@1.19.0/index.css" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/emoji-picker-element@1.19.0/index.js"></script>
+  <!-- Emoji Picker (Web Component) -->
+  <script type="module" src="https://cdn.jsdelivr.net/npm/emoji-picker-element@1.19.0/index.js"></script>
 
   <style>
     body { background:#0a0a0a; color:#00ff88; font-family:'Courier New', monospace; }
     .container { margin-top:50px; }
-    .card { background:#111; border:1px solid #00ff88; border-radius:0; box-shadow:0 0 20px rgba(0,255,136,.3); }
-    .form-control, .form-control:focus { background:#1a1a1a; border:1px solid #00ff88; color:#00ff88; border-radius:0; }
-    .form-control:focus { box-shadow:0 0 10px rgba(0,255,136,.5); }
+    .card { background:#111111; border:1px solid #00ff88; border-radius:0; box-shadow:0 0 20px rgba(0,255,136,0.3); }
+    .form-control,.form-control:focus { background:#1a1a1a; border:1px solid #00ff88; color:#00ff88; border-radius:0; }
+    .form-control:focus { box-shadow:0 0 10px rgba(0,255,136,0.5); }
     h1,h2 { color:#00ff88; text-transform:uppercase; letter-spacing:1px; }
     .btn-primary { background:#00ff88; border-color:#00ff88; color:#000; text-transform:uppercase; letter-spacing:1px; border-radius:0; }
-    .btn-primary:hover { background:#00cc66; border-color:#00cc66; box-shadow:0 0 15px rgba(0,255,136,.6); }
+    .btn-primary:hover { background:#00cc66; border-color:#00cc66; box-shadow:0 0 15px rgba(0,255,136,0.6); }
     .btn-outline-secondary { border-color:#00ff88; color:#00ff88; text-transform:uppercase; letter-spacing:1px; border-radius:0; }
     .btn-outline-secondary:hover { background:#00ff88; color:#000; }
     .btn-danger { background:#ff0040; border-color:#ff0040; color:#fff; text-transform:uppercase; letter-spacing:1px; border-radius:0; }
@@ -29,36 +28,93 @@
     .qr-wrap { display:flex; justify-content:center; align-items:center; }
     #qrCode { max-width:260px; max-height:260px; border:2px solid #00ff88; filter:invert(1); }
 
-    .message-editor { background:#1a1a1a; border:1px solid #00ff88; padding:10px; min-height:120px; resize:none; border-radius:0; color:#00ff88; }
-    .message-editor:focus { outline:none; box-shadow:0 0 10px rgba(0,255,136,.5); }
+    .message-editor {
+      background:#1a1a1a;
+      border:1px solid #00ff88;
+      padding:10px;
+      min-height:120px;
+      border-radius:0;
+      color:#00ff88;
+      white-space:pre-wrap;  /* ajuda a exibir quebras */
+      word-break:break-word;
+      outline:none;
+    }
+    .message-editor:focus { box-shadow:0 0 10px rgba(0,255,136,0.5); }
 
     .format-toolbar { background:#111; border:1px solid #00ff88; padding:5px; margin-bottom:5px; position:relative; }
-    .format-toolbar button { background:none; border:1px solid #00ff88; color:#00ff88; padding:5px 10px; margin-right:5px; text-transform:uppercase; letter-spacing:1px; border-radius:0; }
+    .format-toolbar button {
+      background:none;
+      border:1px solid #00ff88;
+      color:#00ff88;
+      padding:5px 10px;
+      margin-right:5px;
+      text-transform:uppercase;
+      letter-spacing:1px;
+      border-radius:0;
+    }
     .format-toolbar button:hover { background:#00ff88; color:#000; }
 
     .file-preview { display:flex; flex-wrap:wrap; gap:10px; margin-top:10px; }
     .preview-item { position:relative; border:1px solid #00ff88; padding:10px; background:#1a1a1a; }
-    .preview-item img, .preview-item video { max-width:100px; max-height:100px; }
+    .preview-item img,.preview-item video { max-width:100px; max-height:100px; }
     .preview-item .file-info { margin-top:5px; font-size:12px; text-align:center; }
-    .preview-item .remove-preview { position:absolute; top:5px; right:5px; background:#ff0040; color:#fff; border:none; border-radius:50%; width:20px; height:20px; cursor:pointer; }
+    .preview-item .remove-preview {
+      position:absolute; top:5px; right:5px;
+      background:#ff0040; color:#fff; border:none; border-radius:50%;
+      width:20px; height:20px; cursor:pointer;
+    }
 
     .api-docs-btn { margin-top:30px; text-align:center; }
-    .api-docs-btn button { background:#00ff88; border:2px solid #00ff88; color:#000; padding:15px 30px; text-transform:uppercase; letter-spacing:2px; font-weight:bold; font-size:18px; border-radius:0; cursor:pointer; box-shadow:0 0 20px rgba(0,255,136,.5); }
-    .api-docs-btn button:hover { background:#000; color:#00ff88; transform:scale(1.05); transition:all .3s; }
+    .api-docs-btn button {
+      background:#00ff88; border:2px solid #00ff88; color:#000; padding:15px 30px;
+      text-transform:uppercase; letter-spacing:2px; font-weight:bold; font-size:18px;
+      border-radius:0; cursor:pointer; box-shadow:0 0 20px rgba(0,255,136,0.5);
+    }
+    .api-docs-btn button:hover {
+      background:#000; color:#00ff88; transform:scale(1.05); transition:all .3s;
+    }
 
     .recipients-list { display:flex; flex-wrap:wrap; gap:8px; min-height:60px; align-content:flex-start; }
-    .recipient-tag { display:inline-flex; align-items:center; background:#00ff88; color:#000; padding:6px 12px; border-radius:0; font-size:14px; font-weight:bold; text-transform:uppercase; letter-spacing:1px; border:none; }
-    .recipient-tag .remove-tag { background:none; border:none; color:#000; margin-left:8px; cursor:pointer; font-size:16px; font-weight:bold; line-height:1; }
+    .recipient-tag {
+      display:inline-flex; align-items:center;
+      background:#00ff88; color:#000; padding:6px 12px;
+      border-radius:0; font-size:14px; font-weight:bold;
+      text-transform:uppercase; letter-spacing:1px; border:none;
+    }
+    .recipient-tag .remove-tag {
+      background:none; border:none; color:#000; margin-left:8px;
+      cursor:pointer; font-size:16px; font-weight:bold; line-height:1;
+    }
     .recipient-tag .remove-tag:hover { color:#660000; }
 
-    .progress-bar-container { width:100%; height:30px; background:#1a1a1a; border:1px solid #00ff88; border-radius:0; overflow:hidden; margin:10px 0; display:none; }
-    .progress-bar-fill { height:100%; background:linear-gradient(90deg,#00ff88,#00cc66); width:0%; transition:width .3s ease; position:relative; }
-    .progress-bar-text { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); color:#000; font-weight:bold; font-size:14px; text-transform:uppercase; letter-spacing:1px; }
+    .progress-bar-container {
+      width:100%; height:30px; background:#1a1a1a; border:1px solid #00ff88;
+      border-radius:0; overflow:hidden; margin:10px 0; display:none;
+    }
+    .progress-bar-fill {
+      height:100%; background:linear-gradient(90deg,#00ff88,#00cc66);
+      width:0%; transition:width .3s ease; position:relative;
+    }
+    .progress-bar-text {
+      position:absolute; top:50%; left:50%;
+      transform:translate(-50%,-50%);
+      color:#000; font-weight:bold; font-size:14px;
+      text-transform:uppercase; letter-spacing:1px;
+    }
 
     .modal-content { background:#111; border:1px solid #00ff88; color:#00ff88; border-radius:0; }
     .modal-header { border-bottom:1px solid #00ff88; }
     .modal-footer { border-top:1px solid #00ff88; }
     .btn-close { filter:invert(1) hue-rotate(75deg); }
+
+    /* Emoji picker positioning */
+    .emoji-pop {
+      position:absolute;
+      top:40px;
+      left:140px;
+      z-index:9999;
+      display:none;
+    }
   </style>
 </head>
 
@@ -70,40 +126,37 @@
         <h1 class="text-center mb-4">> WHATSAPP API <</h1>
 
         <h2>> ENVIAR MENSAGEM</h2>
-
         <form id="messageForm" action="/api/send" method="POST" enctype="multipart/form-data" class="mb-4" accept-charset="UTF-8">
           <div class="mb-3">
             <label for="recipientsInput" class="form-label">DESTINATÁRIOS</label>
             <div style="display:flex; gap:10px; margin-bottom:10px;">
-              <input type="text" id="recipientsInput" class="form-control"
-                     placeholder="Digite telefone ou nome do grupo..." style="flex:1;">
-              <button type="button" id="addRecipientBtn" class="btn btn-outline-secondary" style="white-space:nowrap;">+ ADICIONAR</button>
-              <button type="button" id="importContactsBtn" class="btn btn-outline-secondary" style="white-space:nowrap;">📁 IMPORTAR JSON</button>
+              <input type="text" id="recipientsInput" class="form-control" placeholder="Digite telefone ou nome do grupo..." style="flex:1;">
+              <button type="button" id="addRecipientBtn" class="btn" style="white-space:nowrap;">+ ADICIONAR</button>
+              <button type="button" id="importContactsBtn" class="btn" style="white-space:nowrap;">📁 IMPORTAR JSON</button>
             </div>
 
             <div id="recipientsList" class="recipients-list" style="min-height:50px; border:1px solid #00ff88; padding:10px; border-radius:0; background:#1a1a1a; margin-bottom:10px;">
-              <div class="muted">Nenhum destinatário adicionado</div>
+              <div class="muted" style="color:#666;">Nenhum destinatário adicionado</div>
             </div>
 
             <input type="hidden" id="recipients" name="recipients">
 
             <div class="muted mt-1">
-              DICA: JSON no formato:
+              DICA: JSON EXEMPLO:
               <br>
               [
-              {"nome":"JOÃO","telefones":["(11)99999-9999"]},
-              {"nome":"MARIA","telefones":["11988887777","5511988887777"]}
+              {"nome":"JOÃO","telefones":["(11)99999-9999"],"email":"joao@x.com","cpf":"123"},
+              {"nome":"MARIA","telefones":["11988887777"],"plano":"200MB"}
               ]
-              <br><br>
-              Você pode usar variáveis na mensagem:
-              <b>$nome</b>, <b>$primeiro_nome</b>, <b>$telefone</b>
+              <br>
+              Na mensagem use: $nome, $email, $cpf, $plano... (qualquer chave)
             </div>
           </div>
 
           <div class="mb-3">
             <label for="delayInput" class="form-label">TEMPO ENTRE MENSAGENS (SEGUNDOS)</label>
-            <input type="number" id="delayInput" name="delay" class="form-control"
-                   value="1.2" min="0" max="60" step="0.1" placeholder="1.2">
+            <input type="number" id="delayInput" name="delay" class="form-control" value="1.2" min="0" max="60" step="0.1">
+            <div class="muted mt-1">TEMPO DE ESPERA ENTRE UMA MENSAGEM E OUTRA.</div>
           </div>
 
           <div class="mb-3">
@@ -113,25 +166,24 @@
               <option value="US">🇺🇸 ESTADOS UNIDOS (+1)</option>
               <option value="OTHER">🌍 OUTRO (SEM FORMATAÇÃO)</option>
             </select>
+            <div class="muted mt-1">ESCOLHA O FORMATO A SER APLICADO AOS TELEFONES.</div>
           </div>
 
           <div class="mb-3">
-            <label for="message" class="form-label">MENSAGEM</label>
+            <label class="form-label">MENSAGEM</label>
 
             <div class="format-toolbar">
               <button type="button" id="boldBtn">*</button>
               <button type="button" id="italicBtn">_</button>
               <button type="button" id="emojiBtn">😀</button>
-              <span id="emojiPicker" style="display:inline-block;"></span>
+
+              <!-- emoji picker -->
+              <emoji-picker id="emojiPickerEl" class="emoji-pop"></emoji-picker>
             </div>
 
-            <div class="message-editor" id="messageEditor" contenteditable="true" placeholder="DIGITE SUA MENSAGEM AQUI"></div>
+            <div class="message-editor" id="messageEditor" contenteditable="true"></div>
             <textarea id="message" name="message" class="d-none"></textarea>
-
-            <div class="muted mt-1">
-              ARRASTE E SOLTE IMAGENS, PDFS OU VÍDEOS AQUI.
-            </div>
-
+            <div class="muted mt-1">ARRASTE E SOLTE IMAGENS, PDFS OU VÍDEOS AQUI.</div>
             <div class="file-preview" id="filePreview"></div>
           </div>
 
@@ -152,7 +204,7 @@
         <div class="muted text-center mt-3" id="stateHint"></div>
 
         <div class="api-docs-btn">
-          <button type="button" onclick="window.open('doc.html','_blank')">> DOCUMENTAÇÃO DA API</button>
+          <button type="button" onclick="window.open('doc.html', '_blank')">> DOCUMENTAÇÃO DA API</button>
         </div>
       </div>
     </div>
@@ -177,13 +229,9 @@
             <img id="qrCode" src="" alt="QR Code" style="display:none;">
           </div>
 
-          <div class="muted mt-3" id="qrHint" style="display:none;">
-            SE EXPIRAR, CLIQUE EM "ATUALIZAR QR".
-          </div>
+          <div class="muted mt-3" id="qrHint" style="display:none;">SE EXPIRAR, CLIQUE EM "ATUALIZAR QR".</div>
 
-          <button class="btn btn-outline-secondary w-100 mt-3" id="btnRefreshQR" type="button">
-            ATUALIZAR QR
-          </button>
+          <button class="btn btn-outline-secondary w-100 mt-3" id="btnRefreshQR" type="button">ATUALIZAR QR</button>
         </div>
       </div>
     </div>
@@ -214,15 +262,7 @@
 let qrModalInstance = null;
 let ws = null;
 let attachedFiles = [];
-
-/**
- * RECIPIENTS AGORA SÃO OBJETOS:
- * { name: string|null, phone: string|null, group: string|null }
- *
- * - telefone -> { phone:"5511...", name:"JOAO" }
- * - grupo -> { group:"NOME DO GRUPO", name:"...", phone:null }
- */
-let recipients = [];
+let recipients = []; // agora: [{name, phone, group, meta:{...}}] ou simples
 
 function showMessageModal(title, message, type) {
   const messageModalLabel = document.getElementById('messageModalLabel');
@@ -254,8 +294,9 @@ async function loadStatus() {
     if (data.status === 'connected') {
       connectionStatus.textContent = `CONECTADO AO WHATSAPP: ${data.number || ''}`.trim();
       stateHint.textContent = data.state ? `ESTADO: ${data.state}` : '';
+
       connectBtn.innerHTML = `
-        <div class="btn-row" style="display:flex; gap:10px;">
+        <div style="display:flex; gap:10px;">
           <button style="flex:1;" class="btn btn-danger" onclick="disconnect()">DESCONECTAR</button>
           <button style="flex:1;" class="btn btn-outline-danger" onclick="resetSession()">RESETAR SESSÃO</button>
         </div>
@@ -263,8 +304,9 @@ async function loadStatus() {
     } else {
       connectionStatus.textContent = 'NÃO CONECTADO AO WHATSAPP';
       stateHint.textContent = data.state ? `ESTADO: ${data.state}` : '';
+
       connectBtn.innerHTML = `
-        <div class="btn-row" style="display:flex; gap:10px;">
+        <div style="display:flex; gap:10px;">
           <button style="flex:1;" class="btn btn-success" onclick="showQrCode()">CONECTAR</button>
           <button style="flex:1;" class="btn btn-outline-danger" onclick="resetSession()">RESETAR SESSÃO</button>
         </div>
@@ -308,7 +350,6 @@ async function fetchAndShowQr() {
 
     const blob = await r.blob();
     const url = URL.createObjectURL(blob);
-
     qrCode.src = url;
     loadingMessage.style.display = 'none';
     qrCode.style.display = 'block';
@@ -362,7 +403,10 @@ function connectWebSocket() {
     ws = new WebSocket(wsUrl);
 
     ws.onopen = () => console.log('[WS] conectado:', wsUrl);
-    ws.onclose = () => { console.log('[WS] desconectado, tentando reconectar...'); setTimeout(connectWebSocket, 1500); };
+    ws.onclose = () => {
+      console.log('[WS] desconectado, tentando reconectar...');
+      setTimeout(connectWebSocket, 1500);
+    };
     ws.onerror = (e) => console.log('[WS] erro:', e);
 
     ws.onmessage = async (event) => {
@@ -409,70 +453,90 @@ function connectWebSocket() {
   }
 }
 
-// ====== Formatação WhatsApp (texto puro com marcadores)
-function formatText(prefix) {
-  const editor = document.getElementById('messageEditor');
-  editor.focus();
-
+/* =========================
+   FORMATAÇÃO (WhatsApp)
+========================= */
+function wrapSelectionWith(prefix) {
   const sel = window.getSelection();
   if (!sel || sel.rangeCount === 0) return;
 
   const range = sel.getRangeAt(0);
-  const selectedText = range.toString();
+  const editor = document.getElementById('messageEditor');
+  if (!editor.contains(range.commonAncestorContainer)) return;
 
-  if (!selectedText) {
-    const node = document.createTextNode(prefix + prefix);
-    range.insertNode(node);
+  if (range.collapsed) {
+    const textNode = document.createTextNode(prefix + prefix);
+    range.insertNode(textNode);
 
     const newRange = document.createRange();
-    newRange.setStart(node, 1);
-    newRange.setEnd(node, 1);
+    newRange.setStart(textNode, prefix.length);
+    newRange.setEnd(textNode, prefix.length);
     sel.removeAllRanges();
     sel.addRange(newRange);
-    return;
+  } else {
+    const selectedText = range.toString();
+    const formattedText = prefix + selectedText + prefix;
+    range.deleteContents();
+    range.insertNode(document.createTextNode(formattedText));
+    sel.removeAllRanges();
   }
 
-  const node = document.createTextNode(prefix + selectedText + prefix);
-  range.deleteContents();
-  range.insertNode(node);
-
-  // posiciona cursor no final do texto inserido
-  const newRange = document.createRange();
-  newRange.setStartAfter(node);
-  newRange.setEndAfter(node);
-  sel.removeAllRanges();
-  sel.addRange(newRange);
+  editor.focus();
 }
 
-// ====== Emoji Picker
+/* =========================
+   EMOJI PICKER
+========================= */
 function initEmojiPicker() {
-  const picker = document.createElement('emoji-picker');
   const emojiBtn = document.getElementById('emojiBtn');
-  const container = document.getElementById('emojiPicker');
-
-  container.style.position = 'relative';
-  container.appendChild(picker);
-
-  picker.style.display = 'none';
-  picker.style.position = 'absolute';
-  picker.style.top = '40px';
-  picker.style.left = '0';
-  picker.style.zIndex = '9999';
+  const picker = document.getElementById('emojiPickerEl');
 
   emojiBtn.addEventListener('click', () => {
-    picker.style.display = picker.style.display === 'none' ? 'block' : 'none';
+    picker.style.display = (picker.style.display === 'none' || !picker.style.display) ? 'block' : 'none';
   });
 
   picker.addEventListener('emoji-click', (event) => {
-    const editor = document.getElementById('messageEditor');
-    const emoji = event.detail.unicode || event.detail.emoji?.unicode || '';
-    editor.appendChild(document.createTextNode(emoji));
+    const emoji = event.detail?.unicode || event.detail?.emoji?.unicode || '';
+    if (!emoji) return;
+
+    insertTextAtCursor(emoji);
     picker.style.display = 'none';
-    editor.focus();
+  });
+
+  // fecha ao clicar fora
+  document.addEventListener('click', (e) => {
+    if (e.target === emojiBtn) return;
+    if (picker.contains(e.target)) return;
+    picker.style.display = 'none';
   });
 }
 
-// ====== Drag & Drop de arquivos
+function insertTextAtCursor(text) {
+  const editor = document.getElementById('messageEditor');
+  editor.focus();
+
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) {
+    editor.appendChild(document.createTextNode(text));
+    return;
+  }
+
+  const range = sel.getRangeAt(0);
+  if (!editor.contains(range.commonAncestorContainer)) {
+    editor.appendChild(document.createTextNode(text));
+    return;
+  }
+
+  range.deleteContents();
+  range.insertNode(document.createTextNode(text));
+  range.collapse(false);
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+/* =========================
+   DRAG & DROP FILES
+========================= */
 function initDragDrop() {
   const editor = document.getElementById('messageEditor');
   const previewContainer = document.getElementById('filePreview');
@@ -484,8 +548,7 @@ function initDragDrop() {
 
   editor.addEventListener('drop', (e) => {
     e.preventDefault();
-    const files = e.dataTransfer.files;
-    handleFiles(files);
+    handleFiles(e.dataTransfer.files);
   });
 
   function handleFiles(files) {
@@ -494,13 +557,11 @@ function initDragDrop() {
         showMessageModal('ERRO', 'MÁXIMO DE 5 ARQUIVOS POR MENSAGEM.', 'warning');
         return;
       }
-
-      const allowedTypes = ['image/jpeg','image/png','image/gif','application/pdf','video/mp4','video/webm'];
-      if (!allowedTypes.includes(file.type)) {
+      const allowed = ['image/jpeg','image/png','image/gif','application/pdf','video/mp4','video/webm'];
+      if (!allowed.includes(file.type)) {
         showMessageModal('ERRO', 'FORMATO NÃO SUPORTADO. APENAS IMAGENS, PDFS E VÍDEOS.', 'danger');
         continue;
       }
-
       attachedFiles.push(file);
       renderPreview(file, attachedFiles.length - 1);
     }
@@ -509,6 +570,7 @@ function initDragDrop() {
   function renderPreview(file, index) {
     const itemDiv = document.createElement('div');
     itemDiv.className = 'preview-item';
+    itemDiv.dataset.index = String(index);
 
     const removeBtn = document.createElement('button');
     removeBtn.className = 'remove-preview';
@@ -532,16 +594,15 @@ function initDragDrop() {
     } else if (file.type.startsWith('video/')) {
       const video = document.createElement('video');
       video.src = URL.createObjectURL(file);
-      video.controls = true;
-      video.style.maxWidth = '100px';
-      video.style.maxHeight = '100px';
+      video.muted = true;
+      video.playsInline = true;
       itemDiv.appendChild(video);
     }
 
-    const fileInfo = document.createElement('div');
-    fileInfo.className = 'file-info';
-    fileInfo.textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
-    itemDiv.appendChild(fileInfo);
+    const info = document.createElement('div');
+    info.className = 'file-info';
+    info.textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+    itemDiv.appendChild(info);
 
     previewContainer.appendChild(itemDiv);
     updateFileInputs();
@@ -549,42 +610,77 @@ function initDragDrop() {
 
   function updateFileInputs() {
     const form = document.getElementById('messageForm');
-    const existingInputs = form.querySelectorAll('input[type="file"]');
-    existingInputs.forEach(input => input.remove());
+    form.querySelectorAll('input[type="file"]').forEach(i => i.remove());
 
-    if (attachedFiles.length > 0) {
-      attachedFiles.forEach((file, index) => {
-        const fileInput = document.createElement('input');
-        fileInput.type = 'file';
-        fileInput.name = index === 0 ? 'file' : `file${index + 1}`;
-        fileInput.className = 'd-none';
-        form.appendChild(fileInput);
-        const dt = new DataTransfer();
-        dt.items.add(file);
-        fileInput.files = dt.files;
-      });
-    }
+    attachedFiles.forEach((file, idx) => {
+      const inp = document.createElement('input');
+      inp.type = 'file';
+      inp.name = (idx === 0) ? 'file' : `file${idx+1}`;
+      inp.className = 'd-none';
+      form.appendChild(inp);
+
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      inp.files = dt.files;
+    });
   }
 }
 
-// ====== Copiar do editor para textarea
+/* =========================
+   QUEBRA DE LINHA (FIX)
+   - contenteditable salva HTML
+   - converte <br>, <div>, <p> em \n
+========================= */
+function getEditorPlainTextPreserveLines(editor) {
+  const html = (editor.innerHTML || '').trim();
+
+  if (!html) return '';
+
+  // transforma blocos em quebras
+  let s = html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(div|p|li|h1|h2|h3|h4|h5|h6)>/gi, '\n')
+    .replace(/<(div|p|li|h1|h2|h3|h4|h5|h6)[^>]*>/gi, '')
+    .replace(/<[^>]+>/g, ''); // remove o resto das tags
+
+  // decode básico de entidades
+  const txt = document.createElement('textarea');
+  txt.innerHTML = s;
+  s = txt.value;
+
+  // normaliza \r\n
+  s = s.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+  // remove excesso absurdo (mantém intenção)
+  s = s.replace(/\n{4,}/g, '\n\n\n');
+
+  return s.trim();
+}
+
 function updateHiddenTextarea() {
   const editor = document.getElementById('messageEditor');
-  document.getElementById('message').value = editor.textContent;
+  const textarea = document.getElementById('message');
+  textarea.value = getEditorPlainTextPreserveLines(editor);
 }
 
-// ====== Recipients (tags)
+/* =========================
+   RECIPIENTS (objetos)
+   recipients[] guarda:
+   { name, phone, group, meta: {...} }
+========================= */
+function sanitizeKey(k) {
+  return String(k || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/[^\w]+/g, '_')
+    .replace(/^_+|_+$/g,'');
+}
+
 function recipientKey(r) {
-  if (r.group) return `g:${(r.group||'').trim().toLowerCase()}`;
-  return `p:${(r.phone||'').replace(/\D/g,'')}`;
-}
-
-function recipientLabel(r) {
-  if (r.group) return `${(r.group || '').trim()}`;
-  const phone = (r.phone || '').trim();
-  const name = (r.name || '').trim();
-  if (name) return `${name} - ${phone}`;
-  return phone;
+  if (!r) return '';
+  if (r.group) return 'g:' + String(r.group).toLowerCase();
+  return 'p:' + String(r.phone || '').replace(/\D/g,'');
 }
 
 function updateRecipientsList() {
@@ -592,21 +688,22 @@ function updateRecipientsList() {
   const hiddenInput = document.getElementById('recipients');
 
   if (!recipients.length) {
-    list.innerHTML = '<div class="muted">Nenhum destinatário adicionado</div>';
+    list.innerHTML = '<div class="muted" style="color:#666;">Nenhum destinatário adicionado</div>';
     hiddenInput.value = '';
     return;
   }
 
-  const tags = recipients.map((r, index) => `
-    <div class="recipient-tag">
-      ${escapeHtml(recipientLabel(r))}
-      <button class="remove-tag" type="button" onclick="removeRecipient(${index})">×</button>
-    </div>
-  `).join('');
+  const tags = recipients.map((r, idx) => {
+    const label = r.group ? `GRUPO: ${r.group}` : (r.phone || '');
+    return `
+      <div class="recipient-tag">
+        ${escapeHtml(label)}
+        <button class="remove-tag" onclick="removeRecipient(${idx})">×</button>
+      </div>
+    `;
+  }).join('');
 
   list.innerHTML = '<div style="display:flex; flex-wrap:wrap; gap:8px;">' + tags + '</div>';
-
-  // hidden recebe JSON COMPLETO com nome/telefone/grupo
   hiddenInput.value = JSON.stringify(recipients);
 }
 
@@ -618,11 +715,9 @@ function addRecipient() {
     return;
   }
 
-  const isPhoneOnly = /^\+?[\d\s().-]+$/.test(value) && value.replace(/\D/g,'').length >= 6;
-
-  const obj = isPhoneOnly
-    ? { name: null, phone: value, group: null }
-    : { name: null, phone: null, group: value };
+  const obj = /^\+?\d[\d()\s\-]+$/.test(value)
+    ? { name:null, phone:value, group:null, meta:{} }
+    : { name:null, phone:null, group:value, meta:{} };
 
   const key = recipientKey(obj);
   if (recipients.some(r => recipientKey(r) === key)) {
@@ -641,6 +736,10 @@ function removeRecipient(index) {
   updateRecipientsList();
 }
 
+/* =========================
+   IMPORT JSON (dinâmico)
+   - qualquer chave vira meta
+========================= */
 function importContacts() {
   const input = document.createElement('input');
   input.type = 'file';
@@ -653,8 +752,7 @@ function importContacts() {
     const reader = new FileReader();
     reader.onload = function(ev) {
       try {
-        const raw = ev.target.result;
-        const contacts = JSON.parse(raw);
+        const contacts = JSON.parse(ev.target.result);
 
         if (!Array.isArray(contacts)) {
           showMessageModal('ERRO', 'JSON PRECISA SER UM ARRAY DE CONTATOS.', 'danger');
@@ -665,23 +763,34 @@ function importContacts() {
         let skipped = 0;
 
         for (const c of contacts) {
-          const name = (c?.nome ?? c?.name ?? c?.Nome ?? '').toString().trim();
-          const phones = Array.isArray(c?.telefones) ? c.telefones
-                       : Array.isArray(c?.phones) ? c.phones
-                       : Array.isArray(c?.telefonesContato) ? c.telefonesContato
-                       : [];
+          if (!c || typeof c !== 'object') { skipped++; continue; }
+
+          const name = (c.nome ?? c.name ?? c.Nome ?? '').toString().trim() || null;
+
+          // telefones pode vir com vários nomes
+          const phones =
+            Array.isArray(c.telefones) ? c.telefones :
+            Array.isArray(c.phones) ? c.phones :
+            Array.isArray(c.telefone) ? c.telefone :
+            Array.isArray(c.tels) ? c.tels :
+            [];
+
+          // meta: copia tudo (menos telefones)
+          const meta = {};
+          for (const [k, v] of Object.entries(c)) {
+            if (!k) continue;
+            const kk = sanitizeKey(k);
+            if (kk === 'telefones' || kk === 'phones' || kk === 'telefone' || kk === 'tels') continue;
+            meta[kk] = (v === null || v === undefined) ? '' : String(v);
+          }
 
           for (const p of phones) {
             const phone = (p ?? '').toString().trim();
             if (!phone) { skipped++; continue; }
 
-            const obj = { name: name || null, phone, group: null };
+            const obj = { name, phone, group: null, meta };
             const key = recipientKey(obj);
-
-            if (recipients.some(r => recipientKey(r) === key)) {
-              skipped++;
-              continue;
-            }
+            if (recipients.some(r => recipientKey(r) === key)) { skipped++; continue; }
 
             recipients.push(obj);
             imported++;
@@ -690,8 +799,8 @@ function importContacts() {
 
         updateRecipientsList();
         showMessageModal('SUCESSO', `IMPORTADO: ${imported} | IGNORADO: ${skipped}`, 'success');
-      } catch (error) {
-        console.error(error);
+      } catch (err) {
+        console.error(err);
         showMessageModal('ERRO', 'FORMATO JSON INVÁLIDO. VERIFIQUE O ARQUIVO.', 'danger');
       }
     };
@@ -702,31 +811,28 @@ function importContacts() {
   input.click();
 }
 
-// ===== Progress bar
-function showProgress() { document.getElementById('progressContainer').style.display = 'block'; }
-function hideProgress() { document.getElementById('progressContainer').style.display = 'none'; }
-
-function updateProgress(current, total, text = null) {
-  const progressBar = document.getElementById('progressBar');
-  const progressText = document.getElementById('progressText');
-  const percentage = total > 0 ? Math.round((current / total) * 100) : 0;
-
-  progressBar.style.width = percentage + '%';
-  progressText.textContent = text ? text : `${current}/${total} (${percentage}%)`;
-
-  if (current >= total) setTimeout(() => hideProgress(), 2000);
+/* =========================
+   PROGRESS BAR
+========================= */
+function showProgress(){ document.getElementById('progressContainer').style.display='block'; }
+function hideProgress(){ document.getElementById('progressContainer').style.display='none'; }
+function updateProgress(current,total,text=null){
+  const bar=document.getElementById('progressBar');
+  const txt=document.getElementById('progressText');
+  const pct = total>0 ? Math.round((current/total)*100) : 0;
+  bar.style.width = pct + '%';
+  txt.textContent = text ? text : `${current}/${total} (${pct}%)`;
+  if (current>=total) setTimeout(()=>hideProgress(),2000);
 }
 
-// ===== Init
 document.addEventListener('DOMContentLoaded', async () => {
   await loadStatus();
   connectWebSocket();
-
   initEmojiPicker();
   initDragDrop();
 
-  document.getElementById('boldBtn').addEventListener('click', () => formatText('*'));
-  document.getElementById('italicBtn').addEventListener('click', () => formatText('_'));
+  document.getElementById('boldBtn').addEventListener('click', () => wrapSelectionWith('*'));
+  document.getElementById('italicBtn').addEventListener('click', () => wrapSelectionWith('_'));
 
   document.getElementById('addRecipientBtn').addEventListener('click', addRecipient);
   document.getElementById('importContactsBtn').addEventListener('click', importContacts);
@@ -744,29 +850,34 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     updateHiddenTextarea();
 
-    const msg = document.getElementById('message').value.trim();
-    if (!msg) {
-      showMessageModal('ERRO', 'A MENSAGEM NÃO PODE SER VAZIA.', 'danger');
-      return;
-    }
+    const msg = document.getElementById('message').value;
+    const rec = document.getElementById('recipients').value;
 
-    if (!recipients.length) {
+    if (!rec || rec.trim().length < 2) {
       showMessageModal('ERRO', 'ADICIONE PELO MENOS 1 DESTINATÁRIO.', 'danger');
       return;
     }
 
-    // garante hidden com JSON atualizado
-    updateRecipientsList();
+    if (!msg || !msg.trim()) {
+      showMessageModal('ERRO', 'A MENSAGEM NÃO PODE SER VAZIA.', 'danger');
+      return;
+    }
 
     const formData = new FormData(this);
 
+    // se não tiver arquivo, remove "file"
+    if (attachedFiles.length === 0) {
+      const oldFileInput = document.querySelector('input[name="file"]');
+      if (oldFileInput) formData.delete('file');
+    }
+
     const submitButton = document.getElementById('btnSend');
-    submitButton.disabled = true;
     const original = submitButton.textContent;
+    submitButton.disabled = true;
     submitButton.textContent = 'ENVIANDO...';
 
     try {
-      const resp = await fetch('/api/send', { method: 'POST', body: formData });
+      const resp = await fetch('/api/send', { method:'POST', body: formData });
       const data = await resp.json().catch(() => null);
 
       submitButton.disabled = false;
@@ -774,8 +885,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       if (data && data.status === 'success') {
         showMessageModal('SUCESSO', data.message || 'MENSAGEM ENVIADA!', 'success');
+
         this.reset();
-        document.getElementById('messageEditor').textContent = '';
+        document.getElementById('messageEditor').innerHTML = '';
         document.getElementById('filePreview').innerHTML = '';
         attachedFiles = [];
         recipients = [];
@@ -783,11 +895,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       } else {
         const msgErr = (data && (data.message || data.error)) ? (data.message || data.error) : 'FALHA AO ENVIAR.';
         showMessageModal('ERRO', 'ERRO AO ENVIAR: ' + msgErr, 'danger');
+        console.error('Resposta:', data);
       }
     } catch (err) {
       submitButton.disabled = false;
       submitButton.textContent = original;
-      console.error(err);
+      console.error('Erro ao enviar:', err);
       showMessageModal('ERRO', 'ERRO AO ENVIAR MENSAGEM.', 'danger');
     }
   });
