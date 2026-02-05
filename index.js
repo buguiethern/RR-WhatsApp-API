@@ -42,21 +42,12 @@ app.use((req, res, next) => {
   return res.status(403).send('Acesso negado.');
 });
 
-// ✅ ORDEM IMPORTA: fileUpload precisa vir ANTES dos parsers se você quer multipart sempre preenchido.
-app.use(fileUpload({
-  createParentPath: true,
-  limits: { fileSize: 25 * 1024 * 1024 },
-  abortOnLimit: true,
-  useTempFiles: false,
-}));
-
-// parsers (para rotas json/urlencoded normais)
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json({ limit: '25mb' }));
-
 app.use(express.static('public'));
+app.use(fileUpload());
 
-// ===== WebSocket (QR e status)
+// ===== WebSocket
 const wsPort = Number(process.env.WS_PORT || 8080);
 const wss = new WebSocket.Server({ port: wsPort });
 
@@ -85,7 +76,6 @@ wss.on('connection', function connection(ws, req) {
   }
 
   console.log(`Cliente conectado via WebSocket: ${cleanedIP}`);
-
   if (waState.qrCodeData) ws.send(JSON.stringify({ type: 'qr', data: waState.qrCodeData }));
   else ws.send(JSON.stringify({ type: 'status', authenticated: waState.authenticated, state: waState.lastKnownState }));
 });
@@ -115,6 +105,7 @@ const STATE_STUCK_TIMEOUT_MS = Number(process.env.WA_STUCK_TIMEOUT_MS || 90000);
 const DESTROY_TIMEOUT_MS = Number(process.env.WA_DESTROY_TIMEOUT_MS || 12000);
 const LOGOUT_TIMEOUT_MS = Number(process.env.WA_LOGOUT_TIMEOUT_MS || 12000);
 
+// fila simples
 let sendChain = Promise.resolve();
 function enqueueSend(fn) {
   sendChain = sendChain.then(fn).catch(() => {});
@@ -123,6 +114,7 @@ function enqueueSend(fn) {
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 function clamp(n, min, max) { return Math.max(min, Math.min(max, n)); }
+
 function backoffDelay(attempt) {
   const base = RESTART_BASE_DELAY_MS;
   const exp = base * Math.pow(2, attempt);
@@ -152,6 +144,7 @@ function safeRmDir(dir) {
 
 function getPuppeteerOptions() {
   const executablePath = process.env.CHROME_PATH || process.env.PUPPETEER_EXECUTABLE_PATH || undefined;
+
   const args = [
     '--no-sandbox',
     '--disable-setuid-sandbox',
@@ -168,8 +161,16 @@ function getPuppeteerOptions() {
     '--metrics-recording-only',
     '--mute-audio',
   ];
+
   if ((process.env.WA_SINGLE_PROCESS || '').toLowerCase() === 'true') args.push('--single-process');
-  return { headless: true, args, defaultViewport: null, timeout: 0, executablePath };
+
+  return {
+    headless: true,
+    args,
+    defaultViewport: null,
+    timeout: 0,
+    executablePath,
+  };
 }
 
 function buildClient() {
@@ -186,7 +187,9 @@ function setState(nextState) {
   broadcast({ type: 'state', state: nextState, authenticated: waState.authenticated });
 }
 
-function clearQr() { waState.qrCodeData = null; }
+function clearQr() {
+  waState.qrCodeData = null;
+}
 
 async function stopClient({ doLogout = false, wipeSession = false, reason = 'stop' } = {}) {
   if (waState.isStopping) return;
@@ -202,10 +205,12 @@ async function stopClient({ doLogout = false, wipeSession = false, reason = 'sto
 
     if (c) {
       try { c.removeAllListeners(); } catch {}
+
       if (doLogout) {
         try { await withTimeout(c.logout(), LOGOUT_TIMEOUT_MS, 'client.logout'); }
         catch (e) { console.log('[WARN] logout falhou:', e?.message || e); }
       }
+
       try { await withTimeout(c.destroy(), DESTROY_TIMEOUT_MS, 'client.destroy'); }
       catch (e) { console.log('[WARN] destroy falhou/timeout:', e?.message || e); }
     }
@@ -230,15 +235,9 @@ async function startClient({ reason = 'start' } = {}) {
 
     const c = buildClient();
     waState.client = c;
-
     registerClientEvents(c);
 
-    try { c.initialize(); }
-    catch (e) {
-      waState.lastErrorAt = Date.now();
-      console.log('[ERR] initialize lançou erro:', e?.message || e);
-      throw e;
-    }
+    c.initialize();
   } finally {
     waState.isStarting = false;
   }
@@ -306,11 +305,6 @@ function registerClientEvents(client) {
     broadcast({ type: 'change_state', state, authenticated: waState.authenticated });
   });
 
-  client.on('loading_screen', (percent, message) => {
-    console.log(`[WA] loading_screen ${percent}%: ${message}`);
-    broadcast({ type: 'loading', percent, message });
-  });
-
   client.on('auth_failure', async (msg) => {
     console.log('[WA] auth_failure:', msg);
     waState.lastErrorAt = Date.now();
@@ -356,6 +350,7 @@ function registerClientEvents(client) {
   });
 }
 
+// Watchdog
 let watchdogTimer = null;
 async function watchdogTick() {
   if (!waState.client) return;
@@ -396,6 +391,7 @@ function stopWatchdog() {
   watchdogTimer = null;
 }
 
+// init WA
 (async () => {
   startWatchdog();
   await startClient({ reason: 'boot' });
@@ -411,10 +407,8 @@ app.get('/config.js', (req, res) => {
   res.send(`window.__WS_PORT__ = ${JSON.stringify(wsPort)};`);
 });
 
-// ===== Rotas
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
+// ===== Rotas UI
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
 app.get('/api/qr', async (req, res) => {
   try {
@@ -452,10 +446,7 @@ app.get('/api/status', async (req, res) => {
 
     const number = waState.client?.info?.wid?.user || null;
 
-    if (state === 'CONNECTED') {
-      return res.json({ status: 'connected', number, state, authenticated: true });
-    }
-
+    if (state === 'CONNECTED') return res.json({ status: 'connected', number, state, authenticated: true });
     return res.json({ status: 'connecting', number, state, authenticated: false });
   } catch (err) {
     console.log('[ERR] /api/status:', err?.message || err);
@@ -485,11 +476,14 @@ app.get('/api/reset', async (req, res) => {
   }
 });
 
+// ===== Helpers envio
 async function assertConnectedOrThrow() {
   const c = waState.client;
   if (!c) throw new Error('Cliente não inicializado.');
+
   const st = await c.getState();
   if (st !== 'CONNECTED') throw new Error(`Cliente não conectado (state=${st}).`);
+
   if (!waState.authenticated) waState.authenticated = true;
 }
 
@@ -545,9 +539,12 @@ function normalizeRecipientToChatId(raw) {
 
   if (/^\+?\d+$/.test(recipientTrimmed)) {
     let number = recipientTrimmed.replace(/\D/g, '');
+
+    // remove nono dígito (BR) se for 55 + DDD + 9xxxxxxxx (13)
     if (number.startsWith('55') && number.length === 13) {
       number = number.slice(0, 4) + number.slice(5);
     }
+
     return number + '@c.us';
   }
 
@@ -558,11 +555,17 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 function formatPhoneNumberBrazil(phone) {
   if (!phone) return '';
+
   let cleanPhone = phone.replace(/\D/g, '');
+
   if (cleanPhone.startsWith('55') && cleanPhone.length > 2) {
     cleanPhone = cleanPhone.substring(2);
   }
+
+  // sempre prefixa 55
   cleanPhone = '55' + cleanPhone;
+
+  // remove 9° dígito (55 + DDD + 9xxxxxxxx = 13)
   if (cleanPhone.length === 13 && cleanPhone.substring(0, 2) === '55') {
     const ddd = cleanPhone.substring(2, 4);
     const numero = cleanPhone.substring(4);
@@ -570,29 +573,86 @@ function formatPhoneNumberBrazil(phone) {
       cleanPhone = '55' + ddd + numero.substring(1);
     }
   }
+
   return cleanPhone;
 }
 
-// ✅ parse robusto para recipients vindo do hidden JSON
-function parseRecipientsAny(input) {
-  if (input == null) return [];
+// ===== TEMPLATE: troca $nome, $primeiro_nome, $telefone (e também {{...}})
+function firstName(full) {
+  const s = String(full || '').trim();
+  if (!s) return '';
+  return s.split(/\s+/)[0] || '';
+}
 
-  // se já for array
-  if (Array.isArray(input)) {
-    return input.map(x => String(x).trim()).filter(Boolean);
+function applyTemplate(template, vars) {
+  const t = String(template ?? '');
+
+  const map = {
+    nome: String(vars.nome ?? ''),
+    primeiro_nome: String(vars.primeiro_nome ?? ''),
+    telefone: String(vars.telefone ?? ''),
+  };
+
+  // $nome / $primeiro_nome / $telefone
+  let out = t
+    .replace(/\$nome\b/gi, map.nome)
+    .replace(/\$primeiro_nome\b/gi, map.primeiro_nome)
+    .replace(/\$telefone\b/gi, map.telefone);
+
+  // {{nome}} / {{primeiro_nome}} / {{telefone}}
+  out = out
+    .replace(/\{\{\s*nome\s*\}\}/gi, map.nome)
+    .replace(/\{\{\s*primeiro_nome\s*\}\}/gi, map.primeiro_nome)
+    .replace(/\{\{\s*telefone\s*\}\}/gi, map.telefone);
+
+  return out;
+}
+
+// ===== Parse recipients: aceita JSON (array objetos) OU array strings OU CSV
+function parseRecipientsField(recipientsField) {
+  // já veio array (raro com multipart, mas pode)
+  if (Array.isArray(recipientsField)) {
+    // pode ser array de strings
+    return recipientsField.map(v => (typeof v === 'string' ? { name: null, phone: v, group: null } : v)).filter(Boolean);
   }
 
-  const s = String(input).trim();
-  if (!s) return [];
+  const raw = String(recipientsField ?? '').trim();
+  if (!raw) return [];
 
-  // tenta JSON
-  try {
-    const j = JSON.parse(s);
-    if (Array.isArray(j)) return j.map(x => String(x).trim()).filter(Boolean);
-  } catch {}
+  // tenta JSON primeiro
+  if (raw.startsWith('[') || raw.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(raw);
 
-  // fallback CSV
-  return s.split(',').map(x => x.trim()).filter(Boolean);
+      // se for {recipients:[...]} etc
+      const arr = Array.isArray(parsed) ? parsed
+        : Array.isArray(parsed?.recipients) ? parsed.recipients
+        : [];
+
+      return arr
+        .map(item => {
+          if (!item) return null;
+
+          // se for string
+          if (typeof item === 'string') return { name: null, phone: item, group: null };
+
+          const name = (item.name ?? item.nome ?? '').toString().trim() || null;
+          const phone = (item.phone ?? item.telefone ?? item.tel ?? '').toString().trim() || null;
+          const group = (item.group ?? item.grupo ?? '').toString().trim() || null;
+
+          // se vier {phone: "..."} ok; se vier {group:"..."} ok
+          if (!phone && !group) return null;
+
+          return { name, phone, group };
+        })
+        .filter(Boolean);
+    } catch {
+      // cai pro CSV
+    }
+  }
+
+  // CSV fallback
+  return raw.split(',').map(s => s.trim()).filter(Boolean).map(x => ({ name: null, phone: x, group: null }));
 }
 
 app.post('/api/send', async (req, res) => {
@@ -600,39 +660,37 @@ app.post('/api/send', async (req, res) => {
   console.log(`[${startTime.toISOString()}] [HTTP] /api/send - Iniciando envio`);
 
   try {
-    const body = req.body || {};
-    const recipientsRaw = body.recipients;
-    const message = body.message;
-    const delaySec = body.delay ?? 1.2;
-    const country = body.country ?? 'BR';
+    const { recipients: recipientsField, message: templateMessage, delay: delaySec = 1.2, country = 'BR' } = req.body;
+    const file = req.files ? req.files.file : null;
 
-    const file = req.files?.file || null;
-
-    console.log(`[${new Date().toISOString()}] [VALIDATION] Validando campos obrigatórios`);
-    if (!recipientsRaw || !String(message || '').trim()) {
-      console.log(`[${new Date().toISOString()}] [VALIDATION] Campos faltando recipients/message`);
+    if (!recipientsField || !templateMessage) {
       return res.status(400).json({ status: 'error', message: 'Campos obrigatórios: recipients, message' });
     }
 
     await assertConnectedOrThrow();
 
-    let recipientList = parseRecipientsAny(recipientsRaw);
-    console.log(`[${new Date().toISOString()}] [PARSING] Processando ${recipientList.length} destinatários`);
-
-    if (recipientList.length === 0) {
-      return res.status(400).json({ status: 'error', message: 'Lista de destinatários vazia.' });
+    const parsedRecipients = parseRecipientsField(recipientsField);
+    if (!parsedRecipients.length) {
+      return res.status(400).json({ status: 'error', message: 'Nenhum destinatário válido encontrado.' });
     }
 
-    if (country === 'BR') {
-      recipientList = recipientList.map(recipient => {
-        const formatted = formatPhoneNumberBrazil(recipient);
-        console.log(`[${new Date().toISOString()}] [FORMAT] Original: ${recipient} -> Formatado: ${formatted}`);
-        return formatted;
-      });
-    }
+    // aplica formatação de país nos telefones (somente nos que têm phone)
+    const normalizedRecipients = parsedRecipients.map(r => {
+      const out = { name: r.name ?? null, phone: r.phone ?? null, group: r.group ?? null };
+
+      if (out.phone) {
+        if (country === 'BR') out.phone = formatPhoneNumberBrazil(out.phone);
+        // US / OTHER: mantém como veio (mas remove espaços/() etc se quiser — deixei como veio)
+        out.phone = String(out.phone).trim();
+      }
+
+      if (out.group) out.group = String(out.group).trim();
+      if (out.name) out.name = String(out.name).trim();
+
+      return out;
+    });
 
     const delayMs = Math.max(0, Math.min(Number(delaySec) * 1000, 60000));
-    console.log(`[${new Date().toISOString()}] [CONFIG] Delay: ${delayMs}ms`);
 
     let chatsCache = null;
     async function getChatsCached() {
@@ -644,55 +702,67 @@ app.post('/api/send', async (req, res) => {
     let errorCount = 0;
     const errors = [];
 
-    broadcast({ type: 'send_progress', total: recipientList.length, current: 0, step: 'starting' });
+    broadcast({ type: 'send_progress', total: normalizedRecipients.length, current: 0, step: 'starting' });
 
     await enqueueSend(async () => {
-      broadcast({ type: 'send_progress', total: recipientList.length, current: 0, step: 'sending' });
+      broadcast({ type: 'send_progress', total: normalizedRecipients.length, current: 0, step: 'sending' });
 
-      for (let i = 0; i < recipientList.length; i++) {
-        const recipient = recipientList[i];
+      for (let i = 0; i < normalizedRecipients.length; i++) {
+        const r = normalizedRecipients[i];
         const progressCurrent = i + 1;
 
-        console.log(`[${new Date().toISOString()}] [SEND] [${progressCurrent}/${recipientList.length}] -> ${recipient}`);
-        broadcast({ type: 'send_progress', total: recipientList.length, current: progressCurrent, recipient });
+        const recipientLabel = r.group ? `GRUPO:${r.group}` : (r.phone || '');
+        broadcast({ type: 'send_progress', total: normalizedRecipients.length, current: progressCurrent, recipient: recipientLabel });
 
         try {
-          const parsed = normalizeRecipientToChatId(recipient);
-          if (!parsed) {
-            errorCount++;
-            errors.push({ recipient, error: 'Destinatário inválido' });
-            continue;
-          }
+          // monta variáveis do template
+          const vars = {
+            nome: r.name || '',
+            primeiro_nome: firstName(r.name || ''),
+            telefone: r.phone || '',
+          };
 
-          if (typeof parsed === 'string') {
-            await sendMessageWithTimeout(parsed, message, file);
-            successCount++;
-          } else {
+          // aplica template por destinatário
+          const finalMessage = applyTemplate(templateMessage, vars);
+
+          if (r.group) {
             const chats = await getChatsCached();
-            const group = chats.find(chat => chat.isGroup && chat.name === parsed.groupName);
+            const group = chats.find(chat => chat.isGroup && chat.name === r.group);
+
             if (!group) {
               errorCount++;
-              errors.push({ recipient, error: `Grupo não encontrado: ${parsed.groupName}` });
+              errors.push({ recipient: recipientLabel, error: `Grupo não encontrado: ${r.group}` });
             } else {
-              await sendMessageWithTimeout(group.id._serialized, message, file);
+              await sendMessageWithTimeout(group.id._serialized, finalMessage, file);
+              successCount++;
+            }
+          } else {
+            const phoneDigits = String(r.phone || '').replace(/\D/g, '');
+            const chatId = normalizeRecipientToChatId(phoneDigits);
+
+            if (!chatId || typeof chatId !== 'string') {
+              errorCount++;
+              errors.push({ recipient: recipientLabel, error: 'Telefone inválido' });
+            } else {
+              await sendMessageWithTimeout(chatId, finalMessage, file);
               successCount++;
             }
           }
 
-          if (i < recipientList.length - 1 && delayMs > 0) {
+          if (i < normalizedRecipients.length - 1 && delayMs > 0) {
             await delay(delayMs);
           }
         } catch (sendError) {
           const errorMsg = sendError?.message || String(sendError);
           errorCount++;
-          errors.push({ recipient, error: errorMsg });
+          errors.push({ recipient: recipientLabel, error: errorMsg });
         }
       }
 
       broadcast({
         type: 'send_progress',
-        total: recipientList.length,
-        current: recipientList.length,
+        total: normalizedRecipients.length,
+        current: normalizedRecipients.length,
         step: 'completed',
         success: successCount,
         errors: errorCount
@@ -701,7 +771,6 @@ app.post('/api/send', async (req, res) => {
 
     const endTime = new Date();
     const duration = endTime - startTime;
-    console.log(`[${endTime.toISOString()}] [COMPLETED] Sucesso: ${successCount}, Erros: ${errorCount}, Tempo: ${duration}ms`);
 
     return res.status(200).json({
       status: 'success',
@@ -712,7 +781,7 @@ app.post('/api/send', async (req, res) => {
 
   } catch (err) {
     const msg = err?.message || String(err);
-    console.log('[ERROR] /api/send:', msg);
+    console.log('[ERR] /api/send:', msg);
 
     const low = msg.toLowerCase();
     if (low.includes('session closed') || low.includes('target closed') || low.includes('browser') || low.includes('protocol error')) {
@@ -732,7 +801,7 @@ app.get('/api/sendMessage/:recipient/:message', async (req, res) => {
 
     if (!recipientParam) return res.status(400).json({ status: 'error', message: 'recipient obrigatório' });
 
-    let chatIdOrGroup = normalizeRecipientToChatId(recipientParam);
+    let chatIdOrGroup = normalizeRecipientToChatId(recipientParam.replace(/\D/g, ''));
     if (!chatIdOrGroup) return res.status(400).json({ status: 'error', message: 'recipient inválido' });
 
     if (typeof chatIdOrGroup !== 'string') {
@@ -760,17 +829,23 @@ app.get('/api/sendMessage/:recipient/:message', async (req, res) => {
   }
 });
 
+// ===== server start
 app.listen(port, () => {
   console.log(`[HTTP] API rodando na porta ${port}`);
   console.log(`[WS] WS rodando na porta ${wsPort}`);
 });
 
+// ===== graceful shutdown
 async function shutdown(sig) {
   console.log(`[SYS] shutdown (${sig})`);
   stopWatchdog();
+
   try { broadcast({ type: 'shutdown', sig }); } catch {}
+
   try { await stopClient({ reason: `shutdown:${sig}`, doLogout: false, wipeSession: false }); } catch {}
+
   try { wss.close(() => {}); } catch {}
+
   process.exit(0);
 }
 
