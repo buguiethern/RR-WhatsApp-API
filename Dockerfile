@@ -1,20 +1,20 @@
 FROM debian:12
 
-# Definir o diretório de trabalho
-WORKDIR /opt
+WORKDIR /opt/RR-WhatsApp-API
 
-# Atualizar pacotes e instalar dependências
-RUN apt update && \
-    apt install -y \
-    git nodejs npm psmisc \
-    ca-certificates fonts-liberation libappindicator3-1 libatk-bridge2.0-0 libcups2 \
-    libdrm-dev libgbm-dev libgtk-3-0 libnspr4 libnss3 libxss1 \
-    lsb-release xdg-utils libasound2 libdrm2 libxcomposite1 libxrandr2 \
-    libgbm1
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      git ca-certificates \
+      nodejs npm psmisc \
+      fonts-liberation libappindicator3-1 libatk-bridge2.0-0 libcups2 \
+      libdrm-dev libgbm-dev libgtk-3-0 libnspr4 libnss3 libxss1 \
+      lsb-release xdg-utils libasound2 libdrm2 libxcomposite1 libxrandr2 libgbm1 \
+    && rm -rf /var/lib/apt/lists/*
 
-RUN git clone https://github.com/remontti/RR-WhatsApp-API.git && \
-    cd RR-WhatsApp-API && \
+# clona direto no diretório correto
+RUN git clone https://github.com/remontti/RR-WhatsApp-API.git . && \
     npm install
 
-# Definir o comando para rodar o aplicativo
-CMD ["node", "/opt/RR-WhatsApp-API/index.js"]
+EXPOSE 3001 8080
+
+CMD ["node", "index.js"]
