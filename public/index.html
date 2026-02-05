@@ -5,10 +5,7 @@
   <meta charset="UTF-8">
   <title>WhatsApp API</title>
 
-  <!-- Bootstrap 5 CSS -->
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
-
-  <!-- Emoji Picker -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/emoji-picker-element@1.19.0/index.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/emoji-picker-element@1.19.0/index.js"></script>
 
@@ -39,7 +36,16 @@
     .loading { text-align:center; font-size:1.2em; color:#00ff88; }
 
     .qr-wrap { display:flex; justify-content:center; align-items:center; }
-    #qrCode { max-width:260px; max-height:260px; border:2px solid #00ff88; filter:invert(1); }
+
+    /* ✅ QR nítido + sem filtro invert */
+    #qrCode {
+      width: 260px;
+      height: 260px;
+      border: 2px solid #00ff88;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      -ms-interpolation-mode: nearest-neighbor;
+    }
 
     .message-editor {
       background:#1a1a1a;
@@ -116,7 +122,6 @@
     .modal-footer { border-top:1px solid #00ff88; }
     .btn-close { filter:invert(1) hue-rotate(75deg); }
 
-    /* ✅ Botões da linha de destinatários (pra garantir clique/visual) */
     .btn-mini {
       border:1px solid #00ff88;
       color:#00ff88;
@@ -171,7 +176,6 @@
               <div class="muted" style="color:#666;">Nenhum destinatário adicionado</div>
             </div>
 
-            <!-- ✅ sempre enviar JSON aqui -->
             <input type="hidden" id="recipients" name="recipients" value="[]">
 
             <div class="muted mt-1">
@@ -181,7 +185,6 @@
               Variáveis: $nome, $email, $telefone, $telefone_formatado, $grupo (se for grupo)
             </div>
 
-            <!-- ✅ debug opcional (ativa no console via window.__DEBUG_RECIPIENTS__=true) -->
             <div class="debugbox" id="debugBox">
               <div class="muted">DEBUG recipients hidden:</div>
               <pre id="debugRecipients"></pre>
@@ -244,7 +247,6 @@
   </div>
 </div>
 
-<!-- Modal QR -->
 <div class="modal fade" id="qrModal" tabindex="-1" aria-labelledby="qrModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
@@ -271,7 +273,6 @@
   </div>
 </div>
 
-<!-- Modal Mensagens -->
 <div class="modal fade" id="messageModal" tabindex="-1" aria-labelledby="messageModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
@@ -287,19 +288,18 @@
   </div>
 </div>
 
-  <!-- Bootstrap 5 JS -->
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <script src="/config.js"></script>
 
 <script>
+  console.log('[SCRIPT START] Loading index.html script');
+  console.log('Bootstrap loaded:', typeof bootstrap);
+  console.log('EmojiPicker loaded:', typeof EmojiPicker);
+
   let qrModalInstance = null;
   let ws = null;
   let attachedFiles = [];
-
-  // ✅ recipients agora é array de objetos: { raw, label, vars }
   let recipients = [];
-
-  // ✅ debug opcional
   const DEBUG = !!window.__DEBUG_RECIPIENTS__;
 
   function showDebug() {
@@ -308,15 +308,6 @@
     if (!DEBUG) { box.style.display = 'none'; return; }
     box.style.display = 'block';
     pre.textContent = document.getElementById('recipients').value || '';
-  }
-
-  function showMessageModal(title, message, type) {
-    const messageModalLabel = document.getElementById('messageModalLabel');
-    const messageModalBody = document.getElementById('messageModalBody');
-    messageModalLabel.textContent = title;
-    messageModalBody.innerHTML = `<div class="alert alert-${type}" role="alert">${escapeHtml(message)}</div>`;
-    const messageModal = new bootstrap.Modal(document.getElementById('messageModal'));
-    messageModal.show();
   }
 
   function escapeHtml(str) {
@@ -328,7 +319,19 @@
       .replaceAll("'", '&#039;');
   }
 
-  // ===== STATUS / QR =====
+  function showMessageModal(title, message, type) {
+    const messageModalLabel = document.getElementById('messageModalLabel');
+    const messageModalBody = document.getElementById('messageModalBody');
+    if (typeof bootstrap === 'undefined') {
+      alert(`${title}: ${message}`);
+      return;
+    }
+    messageModalLabel.textContent = title;
+    messageModalBody.innerHTML = `<div class="alert alert-${type}" role="alert">${escapeHtml(message)}</div>`;
+    const messageModal = new bootstrap.Modal(document.getElementById('messageModal'));
+    messageModal.show();
+  }
+
   async function loadStatus() {
     try {
       const r = await fetch('/api/status', { cache: 'no-store' });
@@ -377,9 +380,17 @@
     loadingMessage.style.display = 'block';
     qrCode.style.display = 'none';
     qrHint.style.display = 'none';
+    loadingMessage.textContent = 'CARREGANDO QR CODE...';
 
     try {
       const r = await fetch('/api/qr', { cache: 'no-store' });
+
+      if (!r.ok) {
+        const txt = await r.text().catch(() => '');
+        loadingMessage.textContent = `ERRO HTTP ${r.status}: ${txt || 'falha ao buscar QR'}`;
+        return;
+      }
+
       const ct = (r.headers.get('content-type') || '').toLowerCase();
 
       if (ct.includes('application/json')) {
@@ -413,6 +424,10 @@
   }
 
   function showQrCode() {
+    if (typeof bootstrap === 'undefined') {
+      alert('Erro: Bootstrap não carregado, não é possível mostrar QR.');
+      return;
+    }
     qrModalInstance = new bootstrap.Modal(document.getElementById('qrModal'));
     qrModalInstance.show();
     fetchAndShowQr();
@@ -441,11 +456,10 @@
       }, { once: true });
     } catch (err) {
       console.error('Erro ao resetar sessão:', err);
-      showMessageModal('ERRO', 'ERRO AO RESETAR SESSÃO (TALVEZ /api/reset NÃO EXISTA).', 'danger');
+      showMessageModal('ERRO', 'ERRO AO RESETAR SESSÃO.', 'danger');
     }
   }
 
-  // ===== WS =====
   function connectWebSocket() {
     try {
       const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -467,9 +481,11 @@
         try { data = JSON.parse(event.data); } catch { return; }
 
         if (data.type === 'qr') {
-          if (!qrModalInstance) qrModalInstance = new bootstrap.Modal(document.getElementById('qrModal'));
-          qrModalInstance.show();
-          await fetchAndShowQr();
+          if (typeof bootstrap !== 'undefined') {
+            if (!qrModalInstance) qrModalInstance = new bootstrap.Modal(document.getElementById('qrModal'));
+            qrModalInstance.show();
+            await fetchAndShowQr();
+          }
         }
 
         if (data.type === 'authenticated' || data.type === 'ready') {
@@ -506,7 +522,6 @@
     }
   }
 
-  // ===== EDITOR QUEBRAS =====
   function getEditorPlainTextPreserveLines() {
     const editor = document.getElementById('messageEditor');
     let t = editor.innerText || '';
@@ -590,7 +605,6 @@
     });
   }
 
-  // ===== DRAG/DROP FILES =====
   function initDragDrop() {
     const editor = document.getElementById('messageEditor');
     const previewContainer = document.getElementById('filePreview');
@@ -684,7 +698,6 @@
     }
   }
 
-  // ===== RECIPIENTS =====
   function updateRecipientsHidden() {
     const hiddenInput = document.getElementById('recipients');
     hiddenInput.value = JSON.stringify(recipients);
@@ -754,31 +767,17 @@
   }
 
   function addRecipient() {
-    console.log('[DEBUG] addRecipient called');
-    alert('Adicionar clicado - função chamada');
     const input = document.getElementById('recipientsInput');
     const value = input.value.trim();
-    console.log('[DEBUG] input value:', value);
 
     if (!value) {
-      console.log('[DEBUG] showing empty field modal');
-      try {
-        showMessageModal('ERRO', 'DIGITE UM TELEFONE OU NOME DE GRUPO.', 'warning');
-      } catch (e) {
-        console.error('[DEBUG] error showing modal:', e);
-      }
+      showMessageModal('ERRO', 'DIGITE UM TELEFONE OU NOME DE GRUPO.', 'warning');
       return;
     }
 
     const ok = addRecipientFromRaw(value, {});
-    console.log('[DEBUG] addRecipientFromRaw returned:', ok);
     if (!ok) {
-      console.log('[DEBUG] showing duplicate modal');
-      try {
-        showMessageModal('AVISO', 'DESTINATÁRIO JÁ ADICIONADO OU INVÁLIDO.', 'warning');
-      } catch (e) {
-        console.error('[DEBUG] error showing modal:', e);
-      }
+      showMessageModal('AVISO', 'DESTINATÁRIO JÁ ADICIONADO OU INVÁLIDO.', 'warning');
       return;
     }
 
@@ -806,21 +805,14 @@
   }
 
   function importContacts() {
-    console.log('[DEBUG] importContacts called');
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
     fileInput.accept = 'application/json,.json';
     fileInput.style.display = 'none';
-    console.log('[DEBUG] created file input');
 
     fileInput.addEventListener('change', () => {
-      console.log('[DEBUG] file input change event fired');
       const file = fileInput.files && fileInput.files[0];
-      console.log('[DEBUG] selected file:', file);
-      if (!file) {
-        console.log('[DEBUG] no file selected');
-        return;
-      }
+      if (!file) return;
 
       const reader = new FileReader();
       reader.onload = () => {
@@ -873,16 +865,10 @@
     });
 
     document.body.appendChild(fileInput);
-    console.log('[DEBUG] appended fileInput to body, clicking...');
     fileInput.click();
-    console.log('[DEBUG] fileInput.click() called');
-    setTimeout(() => {
-      fileInput.remove();
-      console.log('[DEBUG] removed fileInput');
-    }, 2000);
+    setTimeout(() => fileInput.remove(), 2000);
   }
 
-  // ===== PROGRESS =====
   function showProgress() { document.getElementById('progressContainer').style.display = 'block'; }
   function hideProgress() { document.getElementById('progressContainer').style.display = 'none'; }
   function updateProgress(current, total, text = null) {
@@ -891,41 +877,27 @@
 
     const percentage = total > 0 ? Math.round((current / total) * 100) : 0;
     progressBar.style.width = percentage + '%';
-
     progressText.textContent = text ? text : `${current}/${total} (${percentage}%)`;
 
     if (current >= total) setTimeout(() => hideProgress(), 2000);
   }
 
-  // ===== INIT =====
-  console.log('[INIT] DOMContentLoaded fired');
   document.addEventListener('DOMContentLoaded', async () => {
-    console.log('[INIT] DOMContentLoaded callback started');
-    // garante estado inicial
     recipients = [];
     updateRecipientsList();
 
     await loadStatus();
     connectWebSocket();
 
-    initEmojiPicker();
+    try { initEmojiPicker(); } catch (e) { console.error('EmojiPicker init failed:', e); }
     initDragDrop();
 
-    // formatação
     document.getElementById('boldBtn').addEventListener('click', (e) => { e.preventDefault(); surroundSelection('*'); });
     document.getElementById('italicBtn').addEventListener('click', (e) => { e.preventDefault(); surroundSelection('_'); });
 
-    // ✅ botões recipients (sem inline onclick)
-    const addBtn = document.getElementById('addRecipientBtn');
-    const importBtn = document.getElementById('importContactsBtn');
-    console.log('[INIT] addBtn found:', addBtn);
-    console.log('[INIT] importBtn found:', importBtn);
+    document.getElementById('addRecipientBtn').addEventListener('click', (e) => { e.preventDefault(); addRecipient(); });
+    document.getElementById('importContactsBtn').addEventListener('click', (e) => { e.preventDefault(); importContacts(); });
 
-    addBtn.addEventListener('click', (e) => { e.preventDefault(); addRecipient(); });
-    importBtn.addEventListener('click', (e) => { e.preventDefault(); importContacts(); });
-    console.log('[INIT] event listeners attached');
-
-    // enter no input
     document.getElementById('recipientsInput').addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
@@ -933,13 +905,11 @@
       }
     });
 
-    // refresh QR
     document.getElementById('btnRefreshQR').addEventListener('click', async (e) => {
       e.preventDefault();
       await fetchAndShowQr();
     });
 
-    // envio
     document.getElementById('messageForm').addEventListener('submit', async function(event) {
       event.preventDefault();
 
@@ -974,7 +944,6 @@
         if (data && data.status === 'success') {
           showMessageModal('SUCESSO', data.message || 'MENSAGEM ENVIADA COM SUCESSO!', 'success');
 
-          // limpar
           this.reset();
           document.getElementById('messageEditor').innerText = '';
           document.getElementById('filePreview').innerHTML = '';

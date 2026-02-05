@@ -108,6 +108,15 @@ const STATE_STUCK_TIMEOUT_MS = Number(process.env.WA_STUCK_TIMEOUT_MS || 90000);
 const DESTROY_TIMEOUT_MS = Number(process.env.WA_DESTROY_TIMEOUT_MS || 12000);
 const LOGOUT_TIMEOUT_MS = Number(process.env.WA_LOGOUT_TIMEOUT_MS || 12000);
 
+// ✅ versão do WhatsApp Web (evita QR “inválido” por versão velha)
+const WA_WEB_VERSION = (process.env.WA_WEB_VERSION || '').trim();
+// remotePath com {version} é o formato esperado pelo RemoteWebCache :contentReference[oaicite:2]{index=2}
+const WA_WEB_REMOTE_PATH =
+  (process.env.WA_WEB_REMOTE_PATH || 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/{version}.html').trim();
+
+console.log('[BOOT] WA_WEB_VERSION:', WA_WEB_VERSION || '(auto/default)');
+console.log('[BOOT] WA_WEB_REMOTE_PATH:', WA_WEB_REMOTE_PATH);
+
 let sendChain = Promise.resolve();
 function enqueueSend(fn) {
   sendChain = sendChain.then(fn).catch(() => {});
@@ -163,12 +172,30 @@ function getPuppeteerOptions() {
 }
 
 function buildClient() {
-  return new Client({
+  const opts = {
     authStrategy: new LocalAuth({ dataPath: SESSION_DIR }),
     puppeteer: getPuppeteerOptions(),
+
+    // ✅ aumenta tolerância de regeneração de QR
+    qrMaxRetries: Number(process.env.WA_QR_MAX_RETRIES || 10),
+
     takeoverOnConflict: true,
     takeoverTimeoutMs: 3000,
-  });
+
+    // ✅ força cache remoto de versão do WhatsApp Web (mitiga QR “inválido”)
+    // docs: Client options webVersion / webVersionCache :contentReference[oaicite:3]{index=3}
+    webVersionCache: {
+      type: 'remote',
+      remotePath: WA_WEB_REMOTE_PATH,
+      strict: false,
+    },
+  };
+
+  if (WA_WEB_VERSION) {
+    opts.webVersion = WA_WEB_VERSION;
+  }
+
+  return new Client(opts);
 }
 
 function setState(nextState) {
@@ -411,7 +438,12 @@ app.get('/api/qr', async (req, res) => {
     if (waState.authenticated && waState.client) return res.json({ status: 'connected', message: 'Cliente já está conectado' });
     if (!waState.qrCodeData) return res.json({ status: 'waiting', message: 'QR Code ainda não foi gerado, tente novamente em alguns segundos' });
 
-    const qrCodeImage = await QRCode.toDataURL(waState.qrCodeData);
+    const qrCodeImage = await QRCode.toDataURL(waState.qrCodeData, {
+      errorCorrectionLevel: 'M',
+      margin: 2,
+      scale: 10,
+      type: 'image/png',
+    });
     const base64Data = qrCodeImage.replace(/^data:image\/png;base64,/, '');
     const imgBuffer = Buffer.from(base64Data, 'base64');
 
@@ -499,7 +531,6 @@ function applyTemplateVars(text, vars) {
     }
   }
 
-  // $nome, $email, $telefone, etc
   return src.replace(/\$([a-zA-Z0-9_]+)/g, (m, k) => {
     const key = String(k).toLowerCase();
     return (dict[key] !== undefined) ? dict[key] : m;
@@ -515,7 +546,6 @@ const sendMessageWithTimeout = async (chatId, message, file, timeout = 25000) =>
       const imageRegex = /\[img\s*=\s*(https?:\/\/[^\s]+)\]/i;
       const pdfRegex = /\[pdf\s*=\s*(https?:\/\/[^\s]+)\]/i;
 
-      // ✅ NÃO faça .trim() aqui pra não matar \n
       const msg = normalizeNewlines(message);
 
       let match = (msg || '').match(imageRegex);
@@ -582,10 +612,8 @@ function formatPhoneNumberBrazil(phone) {
   let cleanPhone = String(phone).replace(/\D/g, '');
   if (cleanPhone.startsWith('55') && cleanPhone.length > 2) cleanPhone = cleanPhone.substring(2);
 
-  // coloca 55
   cleanPhone = '55' + cleanPhone;
 
-  // remove 9o dígito se for 55 + DDD + 9xxxxxxxx
   if (cleanPhone.length === 13 && cleanPhone.startsWith('55')) {
     const ddd = cleanPhone.substring(2, 4);
     const numero = cleanPhone.substring(4);
@@ -597,31 +625,22 @@ function formatPhoneNumberBrazil(phone) {
   return cleanPhone;
 }
 
-// ✅ parse recipients vindo do form-data:
-// - pode ser string JSON de array
-// - pode ser array (quando envia via JSON)
-// - pode ser string "a,b,c" (fallback)
 function parseRecipientsField(recipientsField) {
   if (recipientsField === undefined || recipientsField === null) return [];
 
-  // se já veio array
   if (Array.isArray(recipientsField)) return recipientsField;
 
   const s = String(recipientsField).trim();
   if (!s) return [];
 
-  // tenta JSON
   if ((s.startsWith('[') && s.endsWith(']')) || (s.startsWith('{') && s.endsWith('}'))) {
     try {
       const parsed = JSON.parse(s);
       if (Array.isArray(parsed)) return parsed;
       return [parsed];
-    } catch {
-      // cai pro split
-    }
+    } catch {}
   }
 
-  // fallback: "a,b,c"
   return s.split(',').map(x => x.trim()).filter(Boolean);
 }
 
@@ -633,10 +652,7 @@ app.post('/api/send', async (req, res) => {
     const delaySec = (req.body && req.body.delay !== undefined) ? req.body.delay : 1.2;
     const country = (req.body && req.body.country) ? String(req.body.country) : 'BR';
 
-    // ✅ message com quebras preservadas
     const messageRaw = normalizeNewlines(req.body?.message ?? '');
-
-    // ✅ recipients em JSON (objetos)
     const recipientsRaw = parseRecipientsField(req.body?.recipients);
 
     const file = req.files ? (req.files.file || null) : null;
@@ -647,19 +663,12 @@ app.post('/api/send', async (req, res) => {
 
     await assertConnectedOrThrow();
 
-    // ✅ transforma recipients em lista final:
-    // item pode ser:
-    //  - string (telefone/grupo)
-    //  - { raw, label, vars } (do front)
-    //  - { telefone, nome, email, ... } (se alguém mandar direto)
     const recipientList = recipientsRaw.map((it) => {
       if (typeof it === 'string') {
         return { raw: it.trim(), vars: {} };
       }
       if (it && typeof it === 'object') {
         if (it.raw) return { raw: String(it.raw).trim(), vars: (it.vars && typeof it.vars === 'object') ? it.vars : {} };
-
-        // se veio tipo contato direto
         if (it.telefone) {
           const vars = { ...it };
           return { raw: String(it.telefone).trim(), vars };
@@ -672,13 +681,11 @@ app.post('/api/send', async (req, res) => {
       return res.status(400).json({ status: 'error', message: 'Nenhum destinatário válido.' });
     }
 
-    // formata telefones BR (apenas se parecer número)
     if (country === 'BR') {
       for (const r of recipientList) {
         const digits = String(r.raw || '').replace(/\D/g,'');
         if (digits.length >= 8) {
           const formatted = formatPhoneNumberBrazil(r.raw);
-          // mantém vars.telefone com o original e o formatado também
           if (!r.vars) r.vars = {};
           if (!r.vars.telefone) r.vars.telefone = r.raw;
           r.vars.telefone_formatado = formatted;
@@ -719,13 +726,9 @@ app.post('/api/send', async (req, res) => {
             continue;
           }
 
-          // ✅ aplica variáveis por destinatário SEM destruir \n
           const vars = entry.vars || {};
-          // compat: se tiver nome/email no root do vars
-          // também injeta $telefone e $grupo
           const mergedVars = { ...vars };
 
-          // se for telefone, deixa $telefone sempre
           if (!mergedVars.telefone) mergedVars.telefone = recipient;
 
           let finalMessage = messageRaw;
