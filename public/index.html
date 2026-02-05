@@ -29,6 +29,12 @@
     .btn-danger { background:#ff0040; border-color:#ff0040; color:#fff; text-transform:uppercase; letter-spacing:1px; border-radius:0; }
     .btn-danger:hover { background:#cc0033; border-color:#cc0033; }
 
+    .btn-success { background:#00ff88; border-color:#00ff88; color:#000; text-transform:uppercase; letter-spacing:1px; border-radius:0; }
+    .btn-success:hover { background:#00cc66; border-color:#00cc66; box-shadow:0 0 15px rgba(0,255,136,.6); }
+
+    .btn-outline-danger { border-color:#ff0040; color:#ff0040; text-transform:uppercase; letter-spacing:1px; border-radius:0; }
+    .btn-outline-danger:hover { background:#ff0040; color:#fff; }
+
     .muted { color:#666; font-size:.95em; }
     .loading { text-align:center; font-size:1.2em; color:#00ff88; }
 
@@ -43,7 +49,7 @@
       resize:none;
       border-radius:0;
       color:#00ff88;
-      white-space:pre-wrap;        /* ✅ ajuda no visual */
+      white-space:pre-wrap;
       overflow-wrap:anywhere;
     }
     .message-editor:focus { outline:none; box-shadow:0 0 10px rgba(0,255,136,.5); }
@@ -109,6 +115,35 @@
     .modal-header { border-bottom:1px solid #00ff88; }
     .modal-footer { border-top:1px solid #00ff88; }
     .btn-close { filter:invert(1) hue-rotate(75deg); }
+
+    /* ✅ Botões da linha de destinatários (pra garantir clique/visual) */
+    .btn-mini {
+      border:1px solid #00ff88;
+      color:#00ff88;
+      background:transparent;
+      padding:10px 14px;
+      border-radius:0;
+      text-transform:uppercase;
+      letter-spacing:1px;
+      font-weight:bold;
+      white-space:nowrap;
+    }
+    .btn-mini:hover { background:#00ff88; color:#000; }
+
+    .debugbox {
+      margin-top:10px;
+      border:1px dashed #00ff88;
+      padding:10px;
+      background:#0f0f0f;
+      display:none;
+    }
+    .debugbox pre {
+      margin:0;
+      white-space:pre-wrap;
+      word-break:break-word;
+      color:#00ff88;
+      font-size:12px;
+    }
   </style>
 </head>
 <body>
@@ -123,11 +158,12 @@
         <form id="messageForm" action="/api/send" method="POST" enctype="multipart/form-data" class="mb-4" accept-charset="UTF-8">
           <div class="mb-3">
             <label for="recipientsInput" class="form-label">DESTINATÁRIOS</label>
+
             <div style="display:flex; gap:10px; margin-bottom:10px;">
               <input type="text" id="recipientsInput" class="form-control"
                      placeholder="Digite telefone ou nome do grupo..." style="flex:1;">
-              <button type="button" id="addRecipientBtn" class="btn" style="white-space:nowrap;">+ ADICIONAR</button>
-              <button type="button" id="importContactsBtn" class="btn" style="white-space:nowrap;">📁 IMPORTAR JSON</button>
+              <button type="button" id="addRecipientBtn" class="btn-mini">+ ADICIONAR</button>
+              <button type="button" id="importContactsBtn" class="btn-mini">📁 IMPORTAR JSON</button>
             </div>
 
             <div id="recipientsList" class="recipients-list"
@@ -135,14 +171,20 @@
               <div class="muted" style="color:#666;">Nenhum destinatário adicionado</div>
             </div>
 
-            <!-- ✅ agora vai como JSON de objetos -->
-            <input type="hidden" id="recipients" name="recipients">
+            <!-- ✅ sempre enviar JSON aqui -->
+            <input type="hidden" id="recipients" name="recipients" value="[]">
 
             <div class="muted mt-1">
               DICA: JSON pode ser:
               [{"nome":"JOÃO","email":"a@b.com","telefones":["(11)99999-9999"]}]
               <br>
-              Variáveis: $nome, $email, $telefone, $grupo (se for grupo)
+              Variáveis: $nome, $email, $telefone, $telefone_formatado, $grupo (se for grupo)
+            </div>
+
+            <!-- ✅ debug opcional (ativa no console via window.__DEBUG_RECIPIENTS__=true) -->
+            <div class="debugbox" id="debugBox">
+              <div class="muted">DEBUG recipients hidden:</div>
+              <pre id="debugRecipients"></pre>
             </div>
           </div>
 
@@ -254,11 +296,19 @@
   let ws = null;
   let attachedFiles = [];
 
-  // ✅ recipients agora vira lista de objetos: { raw, label, vars }
-  // raw = telefone (ou nome do grupo)
-  // label = o que aparece no TAG
-  // vars = objeto com variáveis (nome, email, etc)
+  // ✅ recipients agora é array de objetos: { raw, label, vars }
   let recipients = [];
+
+  // ✅ debug opcional
+  const DEBUG = !!window.__DEBUG_RECIPIENTS__;
+
+  function showDebug() {
+    const box = document.getElementById('debugBox');
+    const pre = document.getElementById('debugRecipients');
+    if (!DEBUG) { box.style.display = 'none'; return; }
+    box.style.display = 'block';
+    pre.textContent = document.getElementById('recipients').value || '';
+  }
 
   function showMessageModal(title, message, type) {
     const messageModalLabel = document.getElementById('messageModalLabel');
@@ -278,6 +328,7 @@
       .replaceAll("'", '&#039;');
   }
 
+  // ===== STATUS / QR =====
   async function loadStatus() {
     try {
       const r = await fetch('/api/status', { cache: 'no-store' });
@@ -292,19 +343,25 @@
         stateHint.textContent = data.state ? `ESTADO: ${data.state}` : '';
         connectBtn.innerHTML = `
           <div class="btn-row" style="display:flex; gap:10px;">
-            <button style="flex:1;" class="btn btn-danger" onclick="disconnect()">DESCONECTAR</button>
-            <button style="flex:1;" class="btn btn-outline-danger" onclick="resetSession()">RESETAR SESSÃO</button>
+            <button style="flex:1;" class="btn btn-danger" id="btnDisconnect">DESCONECTAR</button>
+            <button style="flex:1;" class="btn btn-outline-danger" id="btnReset">RESETAR SESSÃO</button>
           </div>
         `;
+
+        document.getElementById('btnDisconnect').addEventListener('click', disconnect);
+        document.getElementById('btnReset').addEventListener('click', resetSession);
       } else {
         connectionStatus.textContent = 'NÃO CONECTADO AO WHATSAPP';
         stateHint.textContent = data.state ? `ESTADO: ${data.state}` : '';
         connectBtn.innerHTML = `
           <div class="btn-row" style="display:flex; gap:10px;">
-            <button style="flex:1;" class="btn btn-success" onclick="showQrCode()">CONECTAR</button>
-            <button style="flex:1;" class="btn btn-outline-danger" onclick="resetSession()">RESETAR SESSÃO</button>
+            <button style="flex:1;" class="btn btn-success" id="btnConnect">CONECTAR</button>
+            <button style="flex:1;" class="btn btn-outline-danger" id="btnReset">RESETAR SESSÃO</button>
           </div>
         `;
+
+        document.getElementById('btnConnect').addEventListener('click', showQrCode);
+        document.getElementById('btnReset').addEventListener('click', resetSession);
       }
     } catch (err) {
       console.error('Erro ao verificar status:', err);
@@ -388,6 +445,7 @@
     }
   }
 
+  // ===== WS =====
   function connectWebSocket() {
     try {
       const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -448,19 +506,14 @@
     }
   }
 
-  // ✅ preserva quebras do contenteditable
+  // ===== EDITOR QUEBRAS =====
   function getEditorPlainTextPreserveLines() {
     const editor = document.getElementById('messageEditor');
-
-    // innerText preserva Enter / blocos / br como \n (textContent NÃO)
     let t = editor.innerText || '';
-
-    // normaliza
     t = t.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-    t = t.replace(/\u2028|\u2029/g, '\n');         // line separators
-    t = t.replace(/\u00A0/g, ' ');                // nbsp
-    t = t.replace(/[ \t]+\n/g, '\n');             // remove espaços antes do \n
-    // não trim aqui (pra não matar \n final)
+    t = t.replace(/\u2028|\u2029/g, '\n');
+    t = t.replace(/\u00A0/g, ' ');
+    t = t.replace(/[ \t]+\n/g, '\n');
     return t;
   }
 
@@ -468,7 +521,6 @@
     document.getElementById('message').value = getEditorPlainTextPreserveLines();
   }
 
-  // Formatação WhatsApp (não é HTML, é texto com * _)
   function surroundSelection(prefix) {
     const editor = document.getElementById('messageEditor');
     editor.focus();
@@ -477,8 +529,6 @@
     if (!sel || sel.rangeCount === 0) return;
 
     const range = sel.getRangeAt(0);
-
-    // só aplica se seleção está dentro do editor
     if (!editor.contains(range.commonAncestorContainer)) return;
 
     const selected = range.toString();
@@ -486,16 +536,8 @@
 
     range.deleteContents();
     range.insertNode(document.createTextNode(insert));
-
-    // reposiciona cursor após inserção
-    sel.removeAllRanges();
-    const newRange = document.createRange();
-    newRange.setStart(range.endContainer, range.endOffset);
-    newRange.collapse(true);
-    sel.addRange(newRange);
   }
 
-  // Emoji Picker (insere no cursor, não no final)
   function insertAtCursor(text) {
     const editor = document.getElementById('messageEditor');
     editor.focus();
@@ -512,10 +554,7 @@
     }
     range.deleteContents();
     range.insertNode(document.createTextNode(text));
-
-    // move cursor pra depois
-    range.setStart(range.endContainer, range.endOffset);
-    range.collapse(true);
+    range.collapse(false);
     sel.removeAllRanges();
     sel.addRange(range);
   }
@@ -533,7 +572,8 @@
     picker.style.top = '38px';
     picker.style.zIndex = '1000';
 
-    emojiBtn.addEventListener('click', () => {
+    emojiBtn.addEventListener('click', (e) => {
+      e.preventDefault();
       picker.style.display = picker.style.display === 'none' ? 'block' : 'none';
     });
 
@@ -543,7 +583,6 @@
       picker.style.display = 'none';
     });
 
-    // fecha ao clicar fora
     document.addEventListener('click', (e) => {
       if (e.target === emojiBtn) return;
       if (container.contains(e.target)) return;
@@ -551,6 +590,7 @@
     });
   }
 
+  // ===== DRAG/DROP FILES =====
   function initDragDrop() {
     const editor = document.getElementById('messageEditor');
     const previewContainer = document.getElementById('filePreview');
@@ -585,16 +625,16 @@
     function renderPreview(file, index) {
       const itemDiv = document.createElement('div');
       itemDiv.className = 'preview-item';
-      itemDiv.dataset.index = index;
 
       const removeBtn = document.createElement('button');
       removeBtn.className = 'remove-preview';
+      removeBtn.type = 'button';
       removeBtn.textContent = '×';
-      removeBtn.onclick = () => {
+      removeBtn.addEventListener('click', () => {
         attachedFiles.splice(index, 1);
         itemDiv.remove();
         updateFileInputs();
-      };
+      });
       itemDiv.appendChild(removeBtn);
 
       if (file.type.startsWith('image/')) {
@@ -625,15 +665,15 @@
 
     function updateFileInputs() {
       const form = document.getElementById('messageForm');
-      const existingInputs = form.querySelectorAll('input[type="file"]');
+      const existingInputs = form.querySelectorAll('input[type="file"].__dynfile');
       existingInputs.forEach(input => input.remove());
 
       if (attachedFiles.length > 0) {
-        attachedFiles.forEach((file, index) => {
+        attachedFiles.forEach((file, idx) => {
           const fileInput = document.createElement('input');
           fileInput.type = 'file';
-          fileInput.name = index === 0 ? 'file' : `file${index + 1}`;
-          fileInput.className = 'd-none';
+          fileInput.name = idx === 0 ? 'file' : `file${idx + 1}`;
+          fileInput.className = 'd-none __dynfile';
           form.appendChild(fileInput);
 
           const dataTransfer = new DataTransfer();
@@ -644,30 +684,73 @@
     }
   }
 
-  // ✅ Recipients
+  // ===== RECIPIENTS =====
+  function updateRecipientsHidden() {
+    const hiddenInput = document.getElementById('recipients');
+    hiddenInput.value = JSON.stringify(recipients);
+    showDebug();
+  }
+
   function updateRecipientsList() {
     const list = document.getElementById('recipientsList');
-    const hiddenInput = document.getElementById('recipients');
 
     if (recipients.length === 0) {
       list.innerHTML = '<div class="muted" style="color:#666;">Nenhum destinatário adicionado</div>';
-      hiddenInput.value = '';
+      updateRecipientsHidden();
       return;
     }
 
-    const tags = recipients.map((r, index) => {
-      const sub = (r.vars && (r.vars.nome || r.vars.email)) ? `<span class="tag-sub">${escapeHtml((r.vars.nome || '') + (r.vars.email ? ' • ' + r.vars.email : ''))}</span>` : '';
-      return `
-        <div class="recipient-tag">
-          <span>${escapeHtml(r.label || r.raw)}</span>
-          ${sub}
-          <button class="remove-tag" onclick="removeRecipient(${index})">×</button>
-        </div>
-      `;
-    }).join('');
+    const wrapper = document.createElement('div');
+    wrapper.style.display = 'flex';
+    wrapper.style.flexWrap = 'wrap';
+    wrapper.style.gap = '8px';
 
-    list.innerHTML = '<div style="display:flex; flex-wrap:wrap; gap:8px;">' + tags + '</div>';
-    hiddenInput.value = JSON.stringify(recipients);
+    for (let i = 0; i < recipients.length; i++) {
+      const r = recipients[i];
+
+      const tag = document.createElement('div');
+      tag.className = 'recipient-tag';
+
+      const title = document.createElement('span');
+      title.textContent = r.label || r.raw;
+      tag.appendChild(title);
+
+      const hasSub = r.vars && (r.vars.nome || r.vars.email);
+      if (hasSub) {
+        const sub = document.createElement('span');
+        sub.className = 'tag-sub';
+        sub.textContent = `${r.vars.nome || ''}${r.vars.email ? ' • ' + r.vars.email : ''}`.trim();
+        tag.appendChild(sub);
+      }
+
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'remove-tag';
+      btn.textContent = '×';
+      btn.addEventListener('click', () => removeRecipient(i));
+      tag.appendChild(btn);
+
+      wrapper.appendChild(tag);
+    }
+
+    list.innerHTML = '';
+    list.appendChild(wrapper);
+
+    updateRecipientsHidden();
+  }
+
+  function addRecipientFromRaw(raw, vars = {}) {
+    const value = String(raw || '').trim();
+    if (!value) return false;
+
+    if (recipients.some(r => String(r.raw || '').toLowerCase() === value.toLowerCase())) return false;
+
+    recipients.push({
+      raw: value,
+      label: value,
+      vars: (vars && typeof vars === 'object') ? vars : {}
+    });
+    return true;
   }
 
   function addRecipient() {
@@ -679,17 +762,11 @@
       return;
     }
 
-    // duplicado por raw
-    if (recipients.some(r => (r.raw || '').toLowerCase() === value.toLowerCase())) {
-      showMessageModal('AVISO', 'DESTINATÁRIO JÁ ADICIONADO.', 'warning');
+    const ok = addRecipientFromRaw(value, {});
+    if (!ok) {
+      showMessageModal('AVISO', 'DESTINATÁRIO JÁ ADICIONADO OU INVÁLIDO.', 'warning');
       return;
     }
-
-    recipients.push({
-      raw: value,
-      label: value,
-      vars: {} // sem variáveis se adicionou manualmente
-    });
 
     input.value = '';
     updateRecipientsList();
@@ -714,37 +791,41 @@
     return out;
   }
 
-  // ✅ Importa JSON e cria recipients com vars
   function importContacts() {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json,application/json';
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = 'application/json,.json';
+    fileInput.style.display = 'none';
 
-    input.onchange = function(e) {
-      const file = e.target.files[0];
+    fileInput.addEventListener('change', () => {
+      const file = fileInput.files && fileInput.files[0];
       if (!file) return;
 
       const reader = new FileReader();
-      reader.onload = function(ev) {
+      reader.onload = () => {
         try {
-          const contacts = JSON.parse(ev.target.result);
-          if (!Array.isArray(contacts)) {
+          const parsed = JSON.parse(reader.result);
+
+          if (!Array.isArray(parsed)) {
             showMessageModal('ERRO', 'O JSON PRECISA SER UMA LISTA (ARRAY).', 'danger');
             return;
           }
 
-          let imported = 0, skipped = 0;
+          let imported = 0;
+          let skipped = 0;
 
-          for (const contact of contacts) {
+          for (const contact of parsed) {
+            if (!contact || typeof contact !== 'object') { skipped++; continue; }
+
             const vars = normalizeVars(contact);
-            const name = (contact && typeof contact.nome === 'string') ? contact.nome.trim() : '';
+            const name = (typeof contact.nome === 'string') ? contact.nome.trim() : '';
+            const tels = Array.isArray(contact.telefones) ? contact.telefones : [];
 
-            const tels = (contact && Array.isArray(contact.telefones)) ? contact.telefones : [];
             for (const t of tels) {
               const tel = String(t || '').trim();
               if (!tel) { skipped++; continue; }
 
-              if (recipients.some(r => (r.raw || '').toLowerCase() === tel.toLowerCase())) {
+              if (recipients.some(r => String(r.raw || '').toLowerCase() === tel.toLowerCase())) {
                 skipped++;
                 continue;
               }
@@ -760,18 +841,22 @@
 
           updateRecipientsList();
           showMessageModal('SUCESSO', `IMPORTADO: ${imported} | IGNORADO: ${skipped}`, 'success');
-        } catch (error) {
+
+        } catch (e) {
+          console.error(e);
           showMessageModal('ERRO', 'FORMATO JSON INVÁLIDO. VERIFIQUE O ARQUIVO.', 'danger');
-          console.error('Erro ao parsear JSON:', error);
         }
       };
-      reader.readAsText(file, 'utf-8');
-    };
 
-    input.click();
+      reader.readAsText(file, 'utf-8');
+    });
+
+    document.body.appendChild(fileInput);
+    fileInput.click();
+    setTimeout(() => fileInput.remove(), 2000);
   }
 
-  // Progress Bar
+  // ===== PROGRESS =====
   function showProgress() { document.getElementById('progressContainer').style.display = 'block'; }
   function hideProgress() { document.getElementById('progressContainer').style.display = 'none'; }
   function updateProgress(current, total, text = null) {
@@ -786,21 +871,30 @@
     if (current >= total) setTimeout(() => hideProgress(), 2000);
   }
 
+  // ===== INIT =====
   document.addEventListener('DOMContentLoaded', async () => {
+    // garante estado inicial
+    recipients = [];
+    updateRecipientsList();
+
     await loadStatus();
     connectWebSocket();
 
     initEmojiPicker();
     initDragDrop();
 
-    // ✅ Formatação
-    document.getElementById('boldBtn').addEventListener('click', () => surroundSelection('*'));
-    document.getElementById('italicBtn').addEventListener('click', () => surroundSelection('_'));
+    // formatação
+    document.getElementById('boldBtn').addEventListener('click', (e) => { e.preventDefault(); surroundSelection('*'); });
+    document.getElementById('italicBtn').addEventListener('click', (e) => { e.preventDefault(); surroundSelection('_'); });
 
-    // ✅ Recipients
-    document.getElementById('addRecipientBtn').addEventListener('click', addRecipient);
-    document.getElementById('importContactsBtn').addEventListener('click', importContacts);
+    // ✅ botões recipients (sem inline onclick)
+    const addBtn = document.getElementById('addRecipientBtn');
+    const importBtn = document.getElementById('importContactsBtn');
 
+    addBtn.addEventListener('click', (e) => { e.preventDefault(); addRecipient(); });
+    importBtn.addEventListener('click', (e) => { e.preventDefault(); importContacts(); });
+
+    // enter no input
     document.getElementById('recipientsInput').addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
@@ -808,13 +902,18 @@
       }
     });
 
-    document.getElementById('btnRefreshQR').addEventListener('click', async () => { await fetchAndShowQr(); });
+    // refresh QR
+    document.getElementById('btnRefreshQR').addEventListener('click', async (e) => {
+      e.preventDefault();
+      await fetchAndShowQr();
+    });
 
-    // ✅ Envio
+    // envio
     document.getElementById('messageForm').addEventListener('submit', async function(event) {
       event.preventDefault();
 
       updateHiddenTextarea();
+      updateRecipientsHidden();
 
       const msg = document.getElementById('message').value;
       if (!msg || !msg.replace(/\s/g,'').length) {
@@ -827,11 +926,7 @@
         return;
       }
 
-      // garante hidden recipients atualizado
-      updateRecipientsList();
-
-      const form = this;
-      const formData = new FormData(form);
+      const formData = new FormData(this);
 
       const submitButton = document.getElementById('btnSend');
       submitButton.disabled = true;
@@ -849,15 +944,16 @@
           showMessageModal('SUCESSO', data.message || 'MENSAGEM ENVIADA COM SUCESSO!', 'success');
 
           // limpar
-          form.reset();
+          this.reset();
           document.getElementById('messageEditor').innerText = '';
           document.getElementById('filePreview').innerHTML = '';
           attachedFiles = [];
           recipients = [];
           updateRecipientsList();
+
         } else {
-          const msg = (data && (data.message || data.error)) ? (data.message || data.error) : 'FALHA AO ENVIAR.';
-          showMessageModal('ERRO', 'ERRO AO ENVIAR MENSAGEM: ' + msg, 'danger');
+          const emsg = (data && (data.message || data.error)) ? (data.message || data.error) : 'FALHA AO ENVIAR.';
+          showMessageModal('ERRO', 'ERRO AO ENVIAR MENSAGEM: ' + emsg, 'danger');
           console.error('Resposta:', data);
         }
       } catch (err) {
