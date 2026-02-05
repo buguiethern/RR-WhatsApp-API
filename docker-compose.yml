@@ -8,7 +8,7 @@ services:
       - .env
     ports:
       - "${WEB_PORT:-3001}:3001"
-      - "${API_PORT:-8080}:8080"
+      - "${API_PORT:-8070}:8070"
     volumes:
       - rr-session:/opt/RR-WhatsApp-API/session
 
