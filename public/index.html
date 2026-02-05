@@ -287,8 +287,8 @@
   </div>
 </div>
 
-<!-- Bootstrap 5 JS -->
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+  <!-- Bootstrap 5 JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <script src="/config.js"></script>
 
 <script>
@@ -755,6 +755,7 @@
 
   function addRecipient() {
     console.log('[DEBUG] addRecipient called');
+    alert('Adicionar clicado - função chamada');
     const input = document.getElementById('recipientsInput');
     const value = input.value.trim();
     console.log('[DEBUG] input value:', value);
@@ -897,7 +898,9 @@
   }
 
   // ===== INIT =====
+  console.log('[INIT] DOMContentLoaded fired');
   document.addEventListener('DOMContentLoaded', async () => {
+    console.log('[INIT] DOMContentLoaded callback started');
     // garante estado inicial
     recipients = [];
     updateRecipientsList();
@@ -915,9 +918,12 @@
     // ✅ botões recipients (sem inline onclick)
     const addBtn = document.getElementById('addRecipientBtn');
     const importBtn = document.getElementById('importContactsBtn');
+    console.log('[INIT] addBtn found:', addBtn);
+    console.log('[INIT] importBtn found:', importBtn);
 
     addBtn.addEventListener('click', (e) => { e.preventDefault(); addRecipient(); });
     importBtn.addEventListener('click', (e) => { e.preventDefault(); importContacts(); });
+    console.log('[INIT] event listeners attached');
 
     // enter no input
     document.getElementById('recipientsInput').addEventListener('keydown', (e) => {
