@@ -7,61 +7,395 @@
     <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
 
+    <!-- Emoji Picker -->
+    <link href="https://cdn.jsdelivr.net/npm/emoji-picker-element@1.19.0/index.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/emoji-picker-element@1.19.0/index.js"></script>
+
     <style>
-        body { background-color: #f8f9fa; }
-        .container { margin-top: 50px; }
-        .card { box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
-        h1, h2 { color: #343a40; }
-        .loading { text-align:center; font-size:1.2em; color:#6c757d; }
-        .muted { color:#6c757d; font-size:0.95em; }
-        .qr-wrap { display:flex; justify-content:center; align-items:center; }
-        #qrCode { max-width: 260px; max-height: 260px; }
-        .btn-row { display:flex; gap:10px; }
-        .btn-row > button { flex:1; }
+        /* Dark/Matrix Theme */
+        body {
+            background: #0a0a0a;
+            color: #00ff88;
+            font-family: 'Courier New', monospace;
+        }
+
+        .container {
+            margin-top: 50px;
+        }
+
+        .card {
+            background: #111111;
+            border: 1px solid #00ff88;
+            border-radius: 0px;
+            box-shadow: 0 0 20px rgba(0,255,136,0.3);
+        }
+
+        .form-control, .form-control:focus {
+            background: #1a1a1a;
+            border: 1px solid #00ff88;
+            color: #00ff88;
+            border-radius: 0px;
+        }
+
+        .form-control:focus {
+            box-shadow: 0 0 10px rgba(0,255,136,0.5);
+        }
+
+        h1, h2 {
+            color: #00ff88;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .btn-primary {
+            background: #00ff88;
+            border-color: #00ff88;
+            color: #000000;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-radius: 0px;
+        }
+
+        .btn-primary:hover {
+            background: #00cc66;
+            border-color: #00cc66;
+            box-shadow: 0 0 15px rgba(0,255,136,0.6);
+        }
+
+        .btn-outline-secondary {
+            border-color: #00ff88;
+            color: #00ff88;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-radius: 0px;
+        }
+
+        .btn-outline-secondary:hover {
+            background: #00ff88;
+            color: #000000;
+        }
+
+        .btn-danger {
+            background: #ff0040;
+            border-color: #ff0040;
+            color: #ffffff;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-radius: 0px;
+        }
+
+        .btn-danger:hover {
+            background: #cc0033;
+            border-color: #cc0033;
+        }
+
+        .muted {
+            color: #666666;
+            font-size: 0.95em;
+        }
+
+        .loading {
+            text-align: center;
+            font-size: 1.2em;
+            color: #00ff88;
+        }
+
+        /* QR Code Container */
+        .qr-wrap {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #qrCode {
+            max-width: 260px;
+            max-height: 260px;
+            border: 2px solid #00ff88;
+            filter: invert(1);
+        }
+
+        /* Message Editor */
+        .message-editor {
+            background: #1a1a1a;
+            border: 1px solid #00ff88;
+            padding: 10px;
+            min-height: 120px;
+            resize: none;
+            border-radius: 0px;
+            color: #00ff88;
+        }
+
+        .message-editor:focus {
+            outline: none;
+            box-shadow: 0 0 10px rgba(0,255,136,0.5);
+        }
+
+        /* Toolbar */
+        .format-toolbar {
+            background: #111111;
+            border: 1px solid #00ff88;
+            padding: 5px;
+            margin-bottom: 5px;
+        }
+
+        .format-toolbar button {
+            background: none;
+            border: 1px solid #00ff88;
+            color: #00ff88;
+            padding: 5px 10px;
+            margin-right: 5px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-radius: 0px;
+        }
+
+        .format-toolbar button:hover {
+            background: #00ff88;
+            color: #000000;
+        }
+
+        /* File Previews */
+        .file-preview {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .preview-item {
+            position: relative;
+            border: 1px solid #00ff88;
+            padding: 10px;
+            background: #1a1a1a;
+        }
+
+        .preview-item img, .preview-item video {
+            max-width: 100px;
+            max-height: 100px;
+        }
+
+        .preview-item .file-info {
+            margin-top: 5px;
+            font-size: 12px;
+            text-align: center;
+        }
+
+        .preview-item .remove-preview {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            background: #ff0040;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+
+        /* API Docs Button */
+        .api-docs-btn {
+            margin-top: 30px;
+            text-align: center;
+        }
+
+        .api-docs-btn button {
+            background: #00ff88;
+            border: 2px solid #00ff88;
+            color: #000000;
+            padding: 15px 30px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            font-weight: bold;
+            font-size: 18px;
+            border-radius: 0px;
+            cursor: pointer;
+            box-shadow: 0 0 20px rgba(0,255,136,0.5);
+        }
+
+        .api-docs-btn button:hover {
+            background: #000000;
+            color: #00ff88;
+            transform: scale(1.05);
+            transition: all 0.3s;
+        }
+
+        /* Recipients List */
+        .recipients-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            min-height: 60px;
+            align-content: flex-start;
+        }
+
+        .recipient-tag {
+            display: inline-flex;
+            align-items: center;
+            background: #00ff88;
+            color: #000000;
+            padding: 6px 12px;
+            border-radius: 0px;
+            font-size: 14px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border: none;
+        }
+
+        .recipient-tag .remove-tag {
+            background: none;
+            border: none;
+            color: #000000;
+            margin-left: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            line-height: 1;
+        }
+
+        .recipient-tag .remove-tag:hover {
+            color: #660000;
+        }
+
+        /* Progress Bar */
+        .progress-bar-container {
+            width: 100%;
+            height: 30px;
+            background: #1a1a1a;
+            border: 1px solid #00ff88;
+            border-radius: 0px;
+            overflow: hidden;
+            margin: 10px 0;
+            display: none; /* hidden by default */
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #00ff88, #00cc66);
+            width: 0%;
+            transition: width 0.3s ease;
+            position: relative;
+        }
+
+        .progress-bar-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #000000;
+            font-weight: bold;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* Modal Styles */
+        .modal-content {
+            background: #111111;
+            border: 1px solid #00ff88;
+            color: #00ff88;
+            border-radius: 0px;
+        }
+
+        .modal-header {
+            border-bottom: 1px solid #00ff88;
+        }
+
+        .modal-footer {
+            border-top: 1px solid #00ff88;
+        }
+
+        .btn-close {
+            filter: invert(1) hue-rotate(75deg);
+        }
     </style>
 </head>
 <body>
 
 <div class="container">
     <div class="row justify-content-center">
-        <div class="col-md-9">
+        <div class="col-md-10">
             <div class="card p-4">
-                <h1 class="text-center mb-4">WhatsApp API</h1>
+                <h1 class="text-center mb-4">> WHATSAPP API <</h1>
 
-                <h2>Enviar Mensagem</h2>
+                <h2>> ENVIAR MENSAGEM</h2>
                 <form id="messageForm" action="/api/send" method="POST" enctype="multipart/form-data" class="mb-4" accept-charset="UTF-8">
                     <div class="mb-3">
-                        <label for="recipients" class="form-label">Número(s) ou Grupo(s) (separados por vírgula)</label>
-                        <input type="text" id="recipients" name="recipients" class="form-control"
-                               placeholder="Ex: +5511912345678,+5511912345679,Grupo 1" required>
+                        <label for="recipientsInput" class="form-label">DESTINATÁRIOS</label>
+                        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                            <input type="text" id="recipientsInput" class="form-control"
+                                   placeholder="Digite telefone ou nome do grupo..."
+                                   style="flex: 1;">
+                            <button type="button" id="addRecipientBtn" class="btn" style="white-space: nowrap;">+ ADICIONAR</button>
+                            <button type="button" id="importContactsBtn" class="btn" style="white-space: nowrap;">📁 IMPORTAR JSON</button>
+                        </div>
+                        <div id="recipientsList" class="recipients-list" style="min-height: 50px; border: 1px solid #00ff88; padding: 10px; border-radius: 0px; background: #1a1a1a; margin-bottom: 10px;">
+                            <div class="muted" style="color: #666666;">Nenhum destinatário adicionado</div>
+                        </div>
+                        <input type="hidden" id="recipients" name="recipients">
                         <div class="muted mt-1">
-                            Dica: números podem ser com +55. Grupos precisam bater exatamente com o nome no WhatsApp.
+                            DICA: ADICIONE TELEFONES UM POR UM. JSON DEVE TER FORMATO: [{"nome": "JOÃO", "telefones": ["(11)99999-9999"]}]
                         </div>
                     </div>
 
                     <div class="mb-3">
-                        <label for="message" class="form-label">Mensagem</label>
-                        <textarea id="message" name="message" class="form-control" rows="5"
-                                  placeholder="Digite sua mensagem aqui" required></textarea>
+                        <label for="delayInput" class="form-label">TEMPO ENTRE MENSAGENS (SEGUNDOS)</label>
+                        <input type="number" id="delayInput" name="delay" class="form-control"
+                               value="1.2" min="0" max="60" step="0.1"
+                               placeholder="1.2">
                         <div class="muted mt-1">
-                            Você pode usar: <code>[img=https://...]</code> ou <code>[pdf=https://...]</code>
+                            TEMPO DE ESPERA ENTRE O ENVIO DE UMA MENSAGEM E OUTRA. PADRÃO: 1.2 SEGUNDOS.
                         </div>
                     </div>
 
                     <div class="mb-3">
-                        <label for="file" class="form-label">Selecionar Imagem/Documento (Opcional)</label>
-                        <input type="file" id="file" name="file" class="form-control">
+                        <label for="countrySelect" class="form-label">PAÍS PARA FORMATAÇÃO</label>
+                        <select id="countrySelect" name="country" class="form-control">
+                            <option value="BR">🇧🇷 BRASIL (+55)</option>
+                            <option value="US">🇺🇸 ESTADOS UNIDOS (+1)</option>
+                            <option value="OTHER">🌍 OUTRO (SEM FORMATAÇÃO)</option>
+                        </select>
+                        <div class="muted mt-1">
+                            ESCOLHA O FORMATO QUE SERÁ APLICADO AOS TELEFONES.
+                        </div>
                     </div>
 
-                    <button type="submit" class="btn btn-primary w-100" id="btnSend">Enviar Mensagem</button>
+                    <div class="mb-3">
+                        <label for="message" class="form-label">MENSAGEM</label>
+                        <div class="format-toolbar">
+                            <button type="button" id="boldBtn">*</button>
+                            <button type="button" id="italicBtn">_</button>
+                            <button type="button" id="emojiBtn">😀</button>
+                            <span id="emojiPicker" style="display: inline-block;"></span>
+                        </div>
+                        <div class="message-editor" id="messageEditor" contenteditable="true" placeholder="DIGITE SUA MENSAGEM AQUI"></div>
+                        <textarea id="message" name="message" class="d-none"></textarea>
+                        <div class="muted mt-1">
+                            ARRASTE E SOLTE IMAGENS, PDFS OU VIDEOS AQUI.
+                        </div>
+                        <div class="file-preview" id="filePreview"></div>
+                    </div>
+
+                    <div class="progress-bar-container" id="progressContainer">
+                        <div class="progress-bar-fill" id="progressBar">
+                            <div class="progress-bar-text" id="progressText">AGUARDANDO...</div>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary w-100" id="btnSend">> ENVIAR MENSAGEM</button>
                 </form>
 
                 <hr class="my-4">
 
-                <h2 id="connectionStatus" class="text-center">Carregando status...</h2>
+                <h2 id="connectionStatus" class="text-center">CARREGANDO STATUS...</h2>
                 <div id="connectBtn" class="text-center mt-3"></div>
 
                 <div class="muted text-center mt-3" id="stateHint"></div>
+
+                <div class="api-docs-btn">
+                    <button type="button" onclick="window.open('doc.html', '_blank')">> DOCUMENTAÇÃO DA API</button>
+                </div>
             </div>
         </div>
     </div>
@@ -72,25 +406,25 @@
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="qrModalLabel">Conectar ao WhatsApp</h5>
+                <h5 class="modal-title" id="qrModalLabel">CONECTAR AO WHATSAPP</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body text-center">
-                <h6>Escaneie o QR Code abaixo:</h6>
+                <h6>ESCANEIE O QR CODE ABAIXO:</h6>
 
                 <div id="qrCodeContainer" class="mt-3">
-                    <div class="loading" id="loadingMessage">Carregando QR Code...</div>
+                    <div class="loading" id="loadingMessage">CARREGANDO QR CODE...</div>
 
                     <div class="qr-wrap mt-2">
                         <img id="qrCode" src="" alt="QR Code" style="display:none;">
                     </div>
 
                     <div class="muted mt-3" id="qrHint" style="display:none;">
-                        Se expirar, clique em "Atualizar QR".
+                        SE EXPIRAR, CLIQUE EM "ATUALIZAR QR".
                     </div>
 
                     <button class="btn btn-outline-secondary w-100 mt-3" id="btnRefreshQR" type="button">
-                        Atualizar QR
+                        ATUALIZAR QR
                     </button>
                 </div>
             </div>
@@ -103,12 +437,12 @@
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="messageModalLabel">Mensagem</h5>
+                <h5 class="modal-title" id="messageModalLabel">MENSAGEM</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body" id="messageModalBody"></div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fechar</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">FECHAR</button>
             </div>
         </div>
     </div>
@@ -121,6 +455,7 @@
 <script>
 let qrModalInstance = null;
 let ws = null;
+let attachedFiles = [];
 
 function showMessageModal(title, message, type) {
     const messageModalLabel = document.getElementById('messageModalLabel');
@@ -133,10 +468,10 @@ function showMessageModal(title, message, type) {
 
 function escapeHtml(str) {
     return String(str ?? '')
-        .replaceAll('&', '&amp;')
-        .replaceAll('<', '&lt;')
-        .replaceAll('>', '&gt;')
-        .replaceAll('"', '&quot;')
+        .replaceAll('&', '&')
+        .replaceAll('<', '<')
+        .replaceAll('>', '>')
+        .replaceAll('"', '"')
         .replaceAll("'", '&#039;');
 }
 
@@ -150,29 +485,29 @@ async function loadStatus() {
         const stateHint = document.getElementById('stateHint');
 
         if (data.status === 'connected') {
-            connectionStatus.textContent = `Conectado ao WhatsApp: ${data.number || ''}`.trim();
-            stateHint.textContent = data.state ? `Estado: ${data.state}` : '';
+            connectionStatus.textContent = `CONECTADO AO WHATSAPP: ${data.number || ''}`.trim();
+            stateHint.textContent = data.state ? `ESTADO: ${data.state}` : '';
 
             connectBtn.innerHTML = `
-                <div class="btn-row">
-                    <button class="btn btn-danger" onclick="disconnect()">Desconectar</button>
-                    <button class="btn btn-outline-danger" onclick="resetSession()">Resetar Sessão</button>
+                <div class="btn-row" style="display:flex; gap:10px;">
+                    <button style="flex:1;" class="btn btn-danger" onclick="disconnect()">DESCONECTAR</button>
+                    <button style="flex:1;" class="btn btn-outline-danger" onclick="resetSession()">RESETAR SESSÃO</button>
                 </div>
             `;
         } else {
-            connectionStatus.textContent = 'Não conectado ao WhatsApp';
-            stateHint.textContent = data.state ? `Estado: ${data.state}` : '';
+            connectionStatus.textContent = 'NÃO CONECTADO AO WHATSAPP';
+            stateHint.textContent = data.state ? `ESTADO: ${data.state}` : '';
 
             connectBtn.innerHTML = `
-                <div class="btn-row">
-                    <button class="btn btn-success" onclick="showQrCode()">Conectar</button>
-                    <button class="btn btn-outline-danger" onclick="resetSession()">Resetar Sessão</button>
+                <div class="btn-row" style="display:flex; gap:10px;">
+                    <button style="flex:1;" class="btn btn-success" onclick="showQrCode()">CONECTAR</button>
+                    <button style="flex:1;" class="btn btn-outline-danger" onclick="resetSession()">RESETAR SESSÃO</button>
                 </div>
             `;
         }
     } catch (err) {
         console.error('Erro ao verificar status:', err);
-        document.getElementById('connectionStatus').textContent = 'Erro ao carregar o status';
+        document.getElementById('connectionStatus').textContent = 'ERRO AO CARREGAR O STATUS';
     }
 }
 
@@ -194,16 +529,16 @@ async function fetchAndShowQr() {
             const data = await r.json();
             if (data.status === 'connected') {
                 loadingMessage.style.display = 'none';
-                showMessageModal('Info', data.message || 'Já conectado.', 'info');
+                showMessageModal('Info', data.message || 'JÁ CONECTADO.', 'info');
                 if (qrModalInstance) qrModalInstance.hide();
                 await loadStatus();
                 return;
             }
             if (data.status === 'waiting') {
-                loadingMessage.textContent = data.message || 'Aguardando gerar QR...';
+                loadingMessage.textContent = data.message || 'AGUARDANDO GERAR QR...';
                 return;
             }
-            loadingMessage.textContent = data.message || 'Erro ao gerar QR.';
+            loadingMessage.textContent = data.message || 'ERRO AO GERAR QR.';
             return;
         }
 
@@ -217,7 +552,7 @@ async function fetchAndShowQr() {
         qrHint.style.display = 'block';
     } catch (err) {
         console.error('Erro ao carregar QR:', err);
-        loadingMessage.textContent = 'Erro ao carregar QR Code.';
+        loadingMessage.textContent = 'ERRO AO CARREGAR QR CODE.';
     }
 }
 
@@ -230,14 +565,14 @@ function showQrCode() {
 async function disconnect() {
     try {
         await fetch('/api/disconnect', { cache: 'no-store' });
-        showMessageModal('Desconectado', 'Desconectado e reinicializado!', 'warning');
+        showMessageModal('DESCONECTADO', 'DESCONECTADO E REINICIALIZADO!', 'warning');
 
         document.getElementById('messageModal').addEventListener('hidden.bs.modal', async () => {
             await loadStatus();
         }, { once: true });
     } catch (err) {
         console.error('Erro ao desconectar:', err);
-        showMessageModal('Erro', 'Erro ao desconectar.', 'danger');
+        showMessageModal('ERRO', 'ERRO AO DESCONECTAR.', 'danger');
     }
 }
 
@@ -246,14 +581,14 @@ async function resetSession() {
         // só funciona se você tiver /api/reset no backend (index.js novo)
         const r = await fetch('/api/reset', { cache: 'no-store' });
         const txt = await r.text().catch(() => '');
-        showMessageModal('Sessão', txt || 'Sessão resetada! Gere novo QR.', 'warning');
+        showMessageModal('SESSÃO', txt || 'SESSÃO RESETADA! GERE NOVO QR.', 'warning');
 
         document.getElementById('messageModal').addEventListener('hidden.bs.modal', async () => {
             await loadStatus();
         }, { once: true });
     } catch (err) {
         console.error('Erro ao resetar sessão:', err);
-        showMessageModal('Erro', 'Erro ao resetar sessão (talvez /api/reset não exista).', 'danger');
+        showMessageModal('ERRO', 'ERRO AO RESETAR SESSÃO (TALVEZ /api/reset NÃO EXISTA).', 'danger');
     }
 }
 
@@ -300,7 +635,24 @@ function connectWebSocket() {
 
             if (data.type === 'change_state' || data.type === 'state') {
                 const stateHint = document.getElementById('stateHint');
-                if (data.state) stateHint.textContent = `Estado: ${data.state}`;
+                if (data.state) stateHint.textContent = `ESTADO: ${data.state}`;
+            }
+
+            // Progresso do envio
+            if (data.type === 'send_progress') {
+                if (data.step === 'starting') {
+                    showProgress();
+                    updateProgress(0, data.total, 'INICIANDO...');
+                } else if (data.step === 'sending') {
+                    updateProgress(data.current, data.total, `${data.recipient}`);
+                } else if (data.step === 'completed') {
+                    updateProgress(data.total, data.total, `${data.success}/${data.total} - CONCLUÍDO!`);
+                    setTimeout(() => {
+                        const submitButton = document.getElementById('btnSend');
+                        submitButton.disabled = false;
+                        submitButton.textContent = '> ENVIAR MENSAGEM';
+                    }, 1000);
+                }
             }
         };
     } catch (err) {
@@ -309,24 +661,339 @@ function connectWebSocket() {
     }
 }
 
+// Formatação de mensagens
+function formatText(selection, prefix) {
+    const editor = document.getElementById('messageEditor');
+    const selectionObj = window.getSelection();
+    const range = selectionObj.getRangeAt(0);
+
+    if (range.collapsed) {
+        // Sem seleção - inserir formato vazio
+        const textNode = document.createTextNode(prefix + prefix);
+        range.insertNode(textNode);
+        range.setStartBefore(textNode);
+        range.setEnd(textNode, prefix.length);
+        selectionObj.removeAllRanges();
+        selectionObj.addRange(range);
+    } else {
+        // Com seleção - aplicar formato
+        const selectedText = range.toString();
+        const formattedText = prefix + selectedText + prefix;
+        range.deleteContents();
+        range.insertNode(document.createTextNode(formattedText));
+    }
+    editor.focus();
+}
+
+// Emoji Picker
+function initEmojiPicker() {
+    const picker = new EmojiPicker();
+    const emojiBtn = document.getElementById('emojiBtn');
+    const container = document.getElementById('emojiPicker');
+
+    container.appendChild(picker);
+
+    picker.style.display = 'none';
+    picker.style.position = 'absolute';
+    picker.style.zIndex = '1000';
+
+    emojiBtn.addEventListener('click', () => {
+        picker.style.display = picker.style.display === 'none' ? 'block' : 'none';
+    });
+
+    picker.addEventListener('emoji-click', event => {
+        const editor = document.getElementById('messageEditor');
+        const emoji = event.detail.emoji.unicode;
+        editor.appendChild(document.createTextNode(emoji));
+        picker.style.display = 'none';
+        editor.focus();
+    });
+}
+
+// Drag & Drop
+function initDragDrop() {
+    const editor = document.getElementById('messageEditor');
+    const previewContainer = document.getElementById('filePreview');
+
+    editor.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+    });
+
+    editor.addEventListener('drop', (e) => {
+        e.preventDefault();
+        const files = e.dataTransfer.files;
+        handleFiles(files);
+    });
+
+    function handleFiles(files) {
+        for (let file of files) {
+            if (attachedFiles.length >= 5) {
+                showMessageModal('ERRO', 'MÁXIMO DE 5 ARQUIVOS POR MENSAGEM.', 'warning');
+                return;
+            }
+
+            const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'application/pdf', 'video/mp4', 'video/webm'];
+            if (!allowedTypes.includes(file.type)) {
+                showMessageModal('ERRO', 'FORMATO NÃO SUPORTADO. APENAS IMAGENS, PDFS E VÍDEOS.', 'danger');
+                continue;
+            }
+
+            attachedFiles.push(file);
+            renderPreview(file, attachedFiles.length - 1);
+        }
+    }
+
+    function renderPreview(file, index) {
+        const itemDiv = document.createElement('div');
+        itemDiv.className = 'preview-item';
+        itemDiv.dataset.index = index;
+
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'remove-preview';
+        removeBtn.textContent = '×';
+        removeBtn.onclick = () => {
+            attachedFiles.splice(index, 1);
+            itemDiv.remove();
+            updateFileInputs();
+        };
+        itemDiv.appendChild(removeBtn);
+
+        if (file.type.startsWith('image/')) {
+            const img = document.createElement('img');
+            img.src = URL.createObjectURL(file);
+            itemDiv.appendChild(img);
+        } else if (file.type === 'application/pdf') {
+            const pdfIcon = document.createElement('div');
+            pdfIcon.textContent = '📄';
+            pdfIcon.style.fontSize = '50px';
+            itemDiv.appendChild(pdfIcon);
+        } else if (file.type.startsWith('video/')) {
+            const video = document.createElement('video');
+            video.src = URL.createObjectURL(file);
+            video.style.maxWidth = '100px';
+            video.style.maxHeight = '100px';
+            itemDiv.appendChild(video);
+        }
+
+        const fileInfo = document.createElement('div');
+        fileInfo.className = 'file-info';
+        fileInfo.textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+        itemDiv.appendChild(fileInfo);
+
+        previewContainer.appendChild(itemDiv);
+        updateFileInputs();
+    }
+
+    function updateFileInputs() {
+        // Limpar inputs de arquivo existentes
+        const form = document.getElementById('messageForm');
+        const existingInputs = form.querySelectorAll('input[type="file"]');
+        existingInputs.forEach(input => input.remove());
+
+        // Adicionar novos inputs para os arquivos anexados
+        if (attachedFiles.length > 0) {
+            const lastInput = document.querySelector('input[name="file"]');
+            attachedFiles.forEach((file, index) => {
+                if (index === 0 && lastInput) {
+                    lastInput.remove();
+                }
+                const fileInput = document.createElement('input');
+                fileInput.type = 'file';
+                fileInput.name = index === 0 ? 'file' : `file${index + 1}`;
+                fileInput.className = 'd-none';
+                form.appendChild(fileInput);
+                const dataTransfer = new DataTransfer();
+                dataTransfer.items.add(file);
+                fileInput.files = dataTransfer.files;
+            });
+        }
+    }
+}
+
+// Antes de enviar, copiar do editor para o textarea
+function updateHiddenTextarea() {
+    const editor = document.getElementById('messageEditor');
+    const textarea = document.getElementById('message');
+    textarea.value = editor.textContent;
+}
+
+// Recipients Management
+let recipients = [];
+
+function updateRecipientsList() {
+    const list = document.getElementById('recipientsList');
+    const hiddenInput = document.getElementById('recipients');
+
+    if (recipients.length === 0) {
+        list.innerHTML = '<div class="muted" style="color: #666666;">Nenhum destinatário adicionado</div>';
+        hiddenInput.value = '';
+        return;
+    }
+
+    const tags = recipients.map((recipient, index) => `
+        <div class="recipient-tag">
+            ${recipient}
+            <button class="remove-tag" onclick="removeRecipient(${index})">×</button>
+        </div>
+    `).join('');
+
+    list.innerHTML = '<div style="display: flex; flex-wrap: wrap; gap: 8px;">' + tags + '</div>';
+    hiddenInput.value = JSON.stringify(recipients);
+    console.log(`Destinatários atualizados: ${recipients.length} items`);
+}
+
+function addRecipient() {
+    const input = document.getElementById('recipientsInput');
+    const value = input.value.trim();
+
+    if (!value) {
+        showMessageModal('ERRO', 'DIGITE UM TELEFONE OU NOME DE GRUPO.', 'warning');
+        return;
+    }
+
+    // Verificar duplicatas
+    if (recipients.includes(value)) {
+        showMessageModal('AVISO', 'DESTINATÁRIO JÁ ADICIONADO.', 'warning');
+        return;
+    }
+
+    recipients.push(value);
+    input.value = '';
+    updateRecipientsList();
+
+    console.log(`Destinatário adicionado: ${value}`);
+    input.focus();
+}
+
+function removeRecipient(index) {
+    const removed = recipients.splice(index, 1)[0];
+    updateRecipientsList();
+    console.log(`Destinatário removido: ${removed}`);
+}
+
+function importContacts() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const contacts = JSON.parse(e.target.result);
+                console.log('Arquivo JSON carregado:', contacts);
+
+                let imported = 0;
+                let skipped = 0;
+
+                for (const contact of contacts) {
+                    if (contact.telefones && Array.isArray(contact.telefones)) {
+                        for (const telefone of contact.telefones) {
+                            if (telefone && telefone.trim() && !recipients.includes(telefone.trim())) {
+                                recipients.push(telefone.trim());
+                                imported++;
+                            } else {
+                                skipped++;
+                            }
+                        }
+                    }
+                }
+                updateRecipientsList();
+                showMessageModal('SUCESSO', `IMPORTADO: ${imported} | IGNORADO: ${skipped}`, 'success');
+                console.log(`Contatos importados: ${imported}, ignorados: ${skipped}`);
+            } catch (error) {
+                showMessageModal('ERRO', 'FORMATO JSON INVÁLIDO. VERIFIQUE O ARQUIVO.', 'danger');
+                console.error('Erro ao parsear JSON:', error);
+            }
+        };
+        reader.readAsText(file);
+    };
+    input.click();
+}
+
+// Progress Bar Functions
+function showProgress() {
+    document.getElementById('progressContainer').style.display = 'block';
+}
+
+function hideProgress() {
+    document.getElementById('progressContainer').style.display = 'none';
+}
+
+function updateProgress(current, total, text = null) {
+    const progressBar = document.getElementById('progressBar');
+    const progressText = document.getElementById('progressText');
+
+    const percentage = total > 0 ? Math.round((current / total) * 100) : 0;
+    progressBar.style.width = percentage + '%';
+
+    if (text) {
+        progressText.textContent = text;
+    } else {
+        progressText.textContent = `${current}/${total} (${percentage}%)`;
+    }
+
+    if (current >= total) {
+        setTimeout(() => hideProgress(), 2000);
+    }
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
     await loadStatus();
     connectWebSocket();
+
+    // Inicializar funcionalidades
+    initEmojiPicker();
+    initDragDrop();
+
+    // Event listeners para formatação
+    document.getElementById('boldBtn').addEventListener('click', () => formatText('*'));
+    document.getElementById('italicBtn').addEventListener('click', () => formatText('_'));
+
+    // Event listeners para destinatários
+    document.getElementById('addRecipientBtn').addEventListener('click', addRecipient);
+    document.getElementById('importContactsBtn').addEventListener('click', importContacts);
+
+    // Enter em input para adicionar
+    document.getElementById('recipientsInput').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            addRecipient();
+        }
+    });
 
     document.getElementById('btnRefreshQR').addEventListener('click', async () => {
         await fetchAndShowQr();
     });
 
+    // Atualizar textarea antes de enviar
     document.getElementById('messageForm').addEventListener('submit', async function(event) {
+        updateHiddenTextarea();
+        // Remover placeholder se vazio
+        if (!document.getElementById('message').value.trim()) {
+            event.preventDefault();
+            showMessageModal('ERRO', 'A MENSAGEM NÃO PODE SER VAZIA.', 'danger');
+            return;
+        }
+
         event.preventDefault();
 
         const form = this;
         const formData = new FormData(form);
 
+        // Adicionar arquivos anexados se não foram
+        if (attachedFiles.length === 0) {
+            const oldFileInput = document.querySelector('input[name="file"]');
+            if (oldFileInput) formData.delete('file');
+        }
+
         const submitButton = document.getElementById('btnSend');
         submitButton.disabled = true;
         const original = submitButton.textContent;
-        submitButton.textContent = 'Enviando...';
+        submitButton.textContent = 'ENVIANDO...';
 
         try {
             // 🔥 IMPORTANTE: backend precisa aceitar multipart:
@@ -339,18 +1006,22 @@ document.addEventListener('DOMContentLoaded', async () => {
             submitButton.textContent = original;
 
             if (data && data.status === 'success') {
-                showMessageModal('Sucesso', 'Mensagem enviada com sucesso!', 'success');
+                showMessageModal('SUCESSO', 'MENSAGEM ENVIADA COM SUCESSO!', 'success');
+                // Limpar formulário
                 form.reset();
+                document.getElementById('messageEditor').textContent = '';
+                document.getElementById('filePreview').innerHTML = '';
+                attachedFiles = [];
             } else {
-                const msg = (data && (data.message || data.error)) ? (data.message || data.error) : 'Falha ao enviar.';
-                showMessageModal('Erro', 'Erro ao enviar mensagem: ' + msg, 'danger');
+                const msg = (data && (data.message || data.error)) ? (data.message || data.error) : 'FALHA AO ENVIAR.';
+                showMessageModal('ERRO', 'ERRO AO ENVIAR MENSAGEM: ' + msg, 'danger');
                 console.error('Resposta:', data);
             }
         } catch (err) {
             submitButton.disabled = false;
             submitButton.textContent = original;
             console.error('Erro ao enviar:', err);
-            showMessageModal('Erro', 'Erro ao enviar mensagem.', 'danger');
+            showMessageModal('ERRO', 'ERRO AO ENVIAR MENSAGEM.', 'danger');
         }
     });
 });

@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>DOCUMENTAÇÃO DA API WHATSAPP</title>
+
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <style>
+        /* Dark/Matrix Theme */
+        body {
+            background: #0a0a0a;
+            color: #00ff88;
+            font-family: 'Courier New', monospace;
+        }
+
+        .container {
+            margin-top: 30px;
+        }
+
+        .card {
+            background: #111111;
+            border: 1px solid #00ff88;
+            border-radius: 0px;
+            box-shadow: 0 0 20px rgba(0,255,136,0.3);
+            margin-bottom: 20px;
+        }
+
+        h1, h2, h3 {
+            color: #00ff88;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .endpoint {
+            font-family: 'Courier New', monospace;
+            background: #1a1a1a;
+            border: 1px solid #00ff88;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 0px;
+        }
+
+        .method {
+            color: #00ff88;
+            font-weight: bold;
+        }
+
+        .method.get { color: #00ff88; }
+        .method.post { color: #cc00aa; }
+        .method.put { color: #aa00cc; }
+        .method.delete { color: #ff0040; }
+
+        .param-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .param-table th, .param-table td {
+            border: 1px solid #00ff88;
+            padding: 8px;
+            text-align: left;
+        }
+
+        .param-table th {
+            background: #1a1a1a;
+            color: #00ff88;
+        }
+
+        .code-example {
+            background: #000000;
+            border: 1px solid #00ff88;
+            padding: 10px;
+            font-family: 'Courier New', monospace;
+            color: #00ff88;
+            white-space: pre-wrap;
+            margin: 10px 0;
+            border-radius: 0px;
+        }
+
+        .test-form {
+            background: #0f0f0f;
+            padding: 15px;
+            border: 1px solid #00ff88;
+            margin-top: 10px;
+            border-radius: 0px;
+        }
+
+        .form-control {
+            background: #1a1a1a;
+            border: 1px solid #00ff88;
+            color: #00ff88;
+            border-radius: 0px;
+        }
+
+        .form-control:focus {
+            box-shadow: 0 0 10px rgba(0,255,136,0.5);
+        }
+
+        .btn {
+            background: #00ff88;
+            border-color: #00ff88;
+            color: #000000;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-radius: 0px;
+        }
+
+        .btn:hover {
+            background: #00cc66;
+            border-color: #00cc66;
+        }
+
+        .result {
+            margin-top: 10px;
+            padding: 10px;
+            background: #0a0a0a;
+            border: 1px solid #00ff88;
+            font-family: 'Courier New', monospace;
+            color: #00ff88;
+        }
+
+        .back-btn {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: #00ff88;
+            border: 2px solid #00ff88;
+            color: #000000;
+            padding: 10px 15px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: bold;
+            border-radius: 0px;
+            cursor: pointer;
+            box-shadow: 0 0 20px rgba(0,255,136,0.5);
+        }
+
+        .back-btn:hover {
+            background: #000000;
+            color: #00ff88;
+            transform: scale(1.05);
+            transition: all 0.3s;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="back-btn" onclick="window.close()">VOLTAR</div>
+
+    <div class="row">
+        <div class="col-12">
+            <div class="card p-4">
+                <h1 class="text-center mb-4">> WHATSAPP API - DOCUMENTAÇÃO <</h1>
+
+                <p class="text-center">
+                    API para envio de mensagens via WhatsApp usando QR Code para autenticação.
+                    Esta documentação é básica e rápida para que você possa começar a usar a API rapidamente.
+                </p>
+
+                <hr>
+
+                <h2>O QUE É ESSA API?</h2>
+                <p>
+                    Esta é uma API REST simples para integrar o WhatsApp ao seu sistema.
+                    Permite enviar mensagens de texto, imagens e documentos para números ou grupos,
+                    verificando o status da conexão e gerenciando a sessão.
+                </p>
+
+                <h3>COMO USAR?</h3>
+                <ol>
+                    <li>Acesse o frontend (interface web)</li>
+                    <li>Conecte ao WhatsApp escaneando o QR Code</li>
+                    <li>Use os endpoints da API para enviar mensagens</li>
+                    <li>Monitore o status da conexão</li>
+                </ol>
+            </div>
+
+            <div class="card p-4">
+                <h2>> ENDPOINTS DA API</h2>
+
+                <!-- Send Message -->
+                <div class="endpoint">
+                    <span class="method post">POST</span> /api/send
+                    <br>ENVIA MENSAGEM PARA UM OU MAIS DESTINATARIOS
+                </div>
+                <h4>Parâmetros:</h4>
+                <table class="param-table">
+                    <tr><th>Campo</th><th>Tipo</th><th>Obrigatório</th><th>Descrição</th></tr>
+                    <tr><td>recipients</td><td>string</td><td>Sim</td><td>Números ou nomes de grupos separados por vírgula</td></tr>
+                    <tr><td>message</td><td>string</td><td>Sim</td><td>Conteúdo da mensagem</td></tr>
+                    <tr><td>file</td><td>file</td><td>Não</td><td>Arquivo para anexar (imagem/PDF/vídeo)</td></tr>
+                </table>
+
+                <div class="code-example">
+EXEMPLO USANDO CURL:
+curl -X POST /api/send \\
+  -F "recipients=+5511999999999" \\
+  -F "message=Olá Mundo!"
+
+EXEMPLO USANDO JAVASCRIPT:
+const formData = new FormData();
+formData.append('recipients', '+5511999999999');
+formData.append('message', 'Olá Mundo!');
+fetch('/api/send', { method: 'POST', body: formData });
+                </div>
+
+                <div class="test-form">
+                    <h4>> TESTAR ENDPOINT - ENVIAR MENSAGEM</h4>
+                    <div class="mb-3">
+                        <label>Destinatário:</label>
+                        <input type="text" class="form-control" id="testRecipients" placeholder="+5511999999999">
+                    </div>
+                    <div class="mb-3">
+                        <label>Mensagem:</label>
+                        <input type="text" class="form-control" id="testMessage" placeholder="Olá, teste!">
+                    </div>
+                    <button class="btn" onclick="testSendCreate()">TESTAR</button>
+                    <div class="result" id="testSendResult"></div>
+                </div>
+
+                <!-- Status -->
+                <div class="endpoint">
+                    <span class="method get">GET</span> /api/status
+                    <br>VERIFICA O STATUS DA CONEXÃO
+                </div>
+
+                <div class="code-example">
+EXEMPLO DE COMANDO CURL:
+curl /api/status
+
+RETORNO ESPERADO:
+{
+  "status": "connected",
+  "number": "5511999999999",
+  "state": "CONNECTED"
+}
+                </div>
+
+                <div class="test-form">
+                    <h4>> TESTAR ENDPOINT - STATUS</h4>
+                    <button class="btn" onclick="testStatus()">TESTAR</button>
+                    <div class="result" id="testStatusResult"></div>
+                </div>
+
+                <!-- QR Code -->
+                <div class="endpoint">
+                    <span class="method get">GET</span> /api/qr
+                    <br>GERA UM NOVO QR CODE PARA CONEXÃO
+                </div>
+
+                <div class="code-example">
+EXEMPLO DE COMANDO CURL:
+curl /api/qr -o qr.png
+                </div>
+
+                <div class="test-form">
+                    <h4>> TESTAR ENDPOINT - QR CODE</h4>
+                    <button class="btn" onclick="testQR()">TESTAR (ABRE IMAGEM)</button>
+                    <div class="result" id="testQRResult"></div>
+                </div>
+
+                <!-- SendMessage Simple -->
+                <div class="endpoint">
+                    <span class="method get">GET</span> /api/sendMessage/:recipient/:message
+                    <br>ENVIA MENSAGEM SIMPLES VIA URL
+                </div>
+
+                <div class="code-example">
+EXEMPLO USANDO URL:
+GET /api/sendMessage/+5511999999999/Olá Mundo!
+                </div>
+
+                <div class="test-form">
+                    <h4>> TESTAR ENDPOINT - MENSAGEM SIMPLES</h4>
+                    <div class="mb-3">
+                        <label>Destinatário:</label>
+                        <input type="text" class="form-control" id="testSimpleRecipient" placeholder="+5511999999999">
+                    </div>
+                    <div class="mb-3">
+                        <label>Mensagem:</label>
+                        <input type="text" class="form-control" id="testSimpleMessage" placeholder="Olá, teste simples!">
+                    </div>
+                    <button class="btn" onclick="testSendSimple()">TESTAR</button>
+                    <div class="result" id="testSimpleResult"></div>
+                </div>
+
+                <!-- Disconnect -->
+                <div class="endpoint">
+                    <span class="method get">GET</span> /api/disconnect
+                    <br>DESCONECTA E RECRIA A SESSÃO
+                </div>
+
+                <div class="code-example">
+curl /api/disconnect
+                </div>
+
+                <!-- Reset Session -->
+                <div class="endpoint">
+                    <span class="method get">GET</span> /api/reset
+                    <br>RESETA E LIMPA TODA A SESSÃO
+                </div>
+
+                <div class="code-example">
+curl /api/reset
+                </div>
+            </div>
+
+            <div class="card p-4">
+                <h2>> DICAS DE USO</h2>
+                <ul>
+                    <li>Números devem ter o código do país (+55 para Brasil)</li>
+                    <li>Grupos usam exatamente o nome salvo no WhatsApp</li>
+                    <li>Primeiro conecte através da interface web</li>
+                    <li>Mantenha o servidor rodando para não perder a sessão</li>
+                    <li>Use formatação WhatsApp: *negrito*, _itálico_</li>
+                    <li>Anexe arquivos através do campo file no POST</li>
+                    <li>Monitore o status antes de enviar mensagens em lote</li>
+                </ul>
+
+                <h3>Códigos de Erro Comuns:</h3>
+                <ul>
+                    <li>400 - Parâmetros obrigatórios faltando</li>
+                    <li>403 - IP não autorizado</li>
+                    <li>500 - Cliente WhatsApp não inicializado ou erro interno</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bootstrap 5 JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+async function makeRequest(method, url, body) {
+    const resultDiv = arguments[3];
+    try {
+        const options = { method };
+        if (body) options.body = body;
+
+        const response = await fetch(url, options);
+        const data = await response.json().catch(() => ({ error: 'Não foi possível parsear resposta' }));
+        resultDiv.innerText = JSON.stringify(data, null, 2);
+        resultDiv.style.display = 'block';
+    } catch (error) {
+        resultDiv.innerText = 'ERRO: ' + error.message;
+        resultDiv.style.display = 'block';
+    }
+}
+
+function testStatus() {
+    const result = document.getElementById('testStatusResult');
+    result.innerText = 'CARREGANDO...';
+    result.style.display = 'block';
+    makeRequest('GET', '/api/status', null, result);
+}
+
+function testQR() {
+    const result = document.getElementById('testQRResult');
+    result.innerText = 'ABRINDO QR CODE...';
+    result.style.display = 'block';
+    window.open('/api/qr', '_blank');
+    result.innerText = 'QR CODE ABERTO EM NOVA ABA';
+}
+
+function testSendSimple() {
+    const recipient = document.getElementById('testSimpleRecipient').value;
+    const message = document.getElementById('testSimpleMessage').value;
+    const result = document.getElementById('testSimpleResult');
+
+    if (!recipient || !message) {
+        result.innerText = 'PREENCHA TODOS OS CAMPOS';
+        result.style.display = 'block';
+        return;
+    }
+
+    const encodedMessage = encodeURIComponent(message);
+    const url = `/api/sendMessage/${recipient}/${encodedMessage}`;
+
+    result.innerText = 'ENVIANDO...';
+    result.style.display = 'block';
+    makeRequest('GET', url, null, result);
+}
+
+function testSendCreate() {
+    const recipients = document.getElementById('testRecipients').value;
+    const message = document.getElementById('testMessage').value;
+    const result = document.getElementById('testSendResult');
+
+    if (!recipients || !message) {
+        result.innerText = 'PREENCHA TODOS OS CAMPOS';
+        result.style.display = 'block';
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('recipients', recipients);
+    formData.append('message', message);
+
+    result.innerText = 'ENVIANDO...';
+    result.style.display = 'block';
+
+    fetch('/api/send', { method: 'POST', body: formData })
+        .then(res => res.json())
+        .then(data => {
+            result.innerText = JSON.stringify(data, null, 2);
+        })
+        .catch(error => {
+            result.innerText = 'ERRO: ' + error.message;
+        });
+}
+</script>
+
+</body>
+</html>

@@ -612,59 +612,172 @@ function normalizeRecipientToChatId(raw) {
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-app.post('/api/send', async (req, res) => {
-  try {
-    console.log('[HTTP] /api/send');
+// funcao para formatar telefones brasileiros automaticamente
+function formatPhoneNumberBrazil(phone) {
+  if (!phone) return '';
 
-    if (!req.body?.recipients || !req.body?.message) {
+  // remove todos os caracteres nao numericos
+  let cleanPhone = phone.replace(/\D/g, '');
+
+  // se comecar com +55, remove
+  if (cleanPhone.startsWith('55') && cleanPhone.length > 2) {
+    cleanPhone = cleanPhone.substring(2);
+  }
+
+  // adiciona +55 no inicio
+  if (!phone.startsWith('+')) {
+    cleanPhone = '55' + cleanPhone;
+  } else {
+    cleanPhone = cleanPhone;
+  }
+
+  // remove 9o digito se for cel (formato brasileiro): 55 + DDD + 9xxxxxxxx = 13 digitos total
+  // 55 + DDD + 8xxxxxxxx = 12 digitos total
+  if (cleanPhone.length === 13 && cleanPhone.substring(0, 2) === '55') {
+    // remove o 9o digito (9xxxxxxxx se torna 8xxxxxxxx)
+    const ddd = cleanPhone.substring(2, 4);
+    const numero = cleanPhone.substring(4);
+    if (numero.length === 9 && numero.startsWith('9')) {
+      cleanPhone = '55' + ddd + numero.substring(1);
+    }
+  }
+
+  return cleanPhone;
+}
+
+app.post('/api/send', async (req, res) => {
+  const startTime = new Date();
+  console.log(`[${startTime.toISOString()}] [HTTP] /api/send - Iniciando envio`);
+
+  try {
+    const { recipients, message, delay: delaySec = 1.2, country = 'BR' } = req.body;
+    const file = req.files ? req.files.file : null;
+
+    console.log(`[${new Date().toISOString()}] [VALIDATION] Validando campos obrigatórios`);
+    if (!recipients || !message) {
+      console.log(`[${new Date().toISOString()}] [VALIDATION] Campos obrigatórios faltando: recipients=${!!recipients}, message=${!!message}`);
       return res.status(400).json({ status: 'error', message: 'Campos obrigatórios: recipients, message' });
     }
 
-    // valida conectividade antes de enfileirar
+    console.log(`[${new Date().toISOString()}] [AUTH] Verificando conectividade`);
     await assertConnectedOrThrow();
 
-    const { recipients, message } = req.body;
-    const file = req.files ? req.files.file : null;
+    // processa lista de recipients (agora pode ser array ou string separada)
+    let recipientList = [];
+    if (Array.isArray(recipients)) {
+      recipientList = recipients.map(r => String(r).trim()).filter(Boolean);
+    } else {
+      recipientList = String(recipients).split(',').map(s => s.trim()).filter(Boolean);
+    }
 
-    const recipientList = String(recipients).split(',').map(s => s.trim()).filter(Boolean);
+    console.log(`[${new Date().toISOString()}] [PARSING] Processando ${recipientList.length} destinatários`);
+
+    // formata telefones se for Brasil
+    if (country === 'BR') {
+      recipientList = recipientList.map(recipient => {
+        const formatted = formatPhoneNumberBrazil(recipient);
+        console.log(`[${new Date().toISOString()}] [FORMAT] Original: ${recipient} -> Formatado: ${formatted}`);
+        return formatted;
+      });
+    }
+
+    const delayMs = Math.max(0, Math.min(Number(delaySec) * 1000, 60000)); // 0-60s
+    console.log(`[${new Date().toISOString()}] [CONFIG] Delay entre mensagens: ${delayMs}ms`);
 
     // evita buscar chats repetidamente se tiver grupo
     let chatsCache = null;
     async function getChatsCached() {
-      if (!chatsCache) chatsCache = await waState.client.getChats();
+      if (!chatsCache) {
+        console.log(`[${new Date().toISOString()}] [CACHE] Buscando lista de chats`);
+        chatsCache = await waState.client.getChats();
+      }
       return chatsCache;
     }
 
-    // enfileira para não disparar concorrência no pup
+    let successCount = 0;
+    let errorCount = 0;
+    const errors = [];
+
+    // broadcast progresso inicial
+    broadcast({ type: 'send_progress', total: recipientList.length, current: 0, step: 'starting' });
+
+    // enfileira para não disparar concorrência
     await enqueueSend(async () => {
-      for (const recipient of recipientList) {
-        const parsed = normalizeRecipientToChatId(recipient);
-        if (!parsed) continue;
+      console.log(`[${new Date().toISOString()}] [QUEUE] Enfileirado envio para ${recipientList.length} destinatários`);
+      broadcast({ type: 'send_progress', total: recipientList.length, current: 0, step: 'sending' });
 
-        if (typeof parsed === 'string') {
-          console.log('[SEND] chatId:', parsed);
-          await sendMessageWithTimeout(parsed, message, file);
-        } else {
-          const chats = await getChatsCached();
-          const group = chats.find(chat => chat.isGroup && chat.name === parsed.groupName);
-          if (!group) {
-            console.log(`[WARN] Grupo "${parsed.groupName}" não encontrado.`);
-          } else {
-            console.log('[SEND] groupId:', group.id._serialized, 'name:', parsed.groupName);
-            await sendMessageWithTimeout(group.id._serialized, message, file);
+      for (let i = 0; i < recipientList.length; i++) {
+        const recipient = recipientList[i];
+        const progressCurrent = i + 1;
+
+        console.log(`[${new Date().toISOString()}] [SEND] [${progressCurrent}/${recipientList.length}] Iniciando envio para: ${recipient}`);
+        broadcast({ type: 'send_progress', total: recipientList.length, current: progressCurrent, recipient: recipient });
+
+        try {
+          const parsed = normalizeRecipientToChatId(recipient);
+          if (!parsed) {
+            console.log(`[${new Date().toISOString()}] [SEND] [${progressCurrent}] Destinatário inválido pulado: ${recipient}`);
+            errorCount++;
+            errors.push({ recipient, error: 'Destinatário inválido' });
+            continue;
           }
-        }
 
-        await delay(1200); // menor que 5s, mas ainda dá respiro
+          if (typeof parsed === 'string') {
+            console.log(`[${new Date().toISOString()}] [SEND] [${progressCurrent}] Enviando chatId: ${parsed}`);
+            await sendMessageWithTimeout(parsed, message, file);
+            console.log(`[${new Date().toISOString()}] [SEND] [${progressCurrent}] ✅ Sucesso: ${recipient} (${parsed})`);
+            successCount++;
+          } else {
+            console.log(`[${new Date().toISOString()}] [SEND] [${progressCurrent}] Buscando grupo: ${parsed.groupName}`);
+            const chats = await getChatsCached();
+            const group = chats.find(chat => chat.isGroup && chat.name === parsed.groupName);
+            if (!group) {
+              console.log(`[${new Date().toISOString()}] [SEND] [${progressCurrent}] ⚠️ Grupo não encontrado: ${parsed.groupName}`);
+              errorCount++;
+              errors.push({ recipient, error: `Grupo não encontrado: ${parsed.groupName}` });
+            } else {
+              console.log(`[${new Date().toISOString()}] [SEND] [${progressCurrent}] Enviando groupId: ${group.id._serialized}`);
+              await sendMessageWithTimeout(group.id._serialized, message, file);
+              console.log(`[${new Date().toISOString()}] [SEND] [${progressCurrent}] ✅ Sucesso grupo: ${parsed.groupName} (${group.id._serialized})`);
+              successCount++;
+            }
+          }
+
+          // delay entre mensagens, exceto na última
+          if (i < recipientList.length - 1 && delayMs > 0) {
+            console.log(`[${new Date().toISOString()}] [DELAY] Pausando ${delayMs}ms antes do próximo`);
+            await delay(delayMs);
+          }
+
+        } catch (sendError) {
+          const errorMsg = sendError?.message || String(sendError);
+          console.log(`[${new Date().toISOString()}] [SEND] [${progressCurrent}] ❌ Erro ao enviar para ${recipient}: ${errorMsg}`);
+          errorCount++;
+          errors.push({ recipient, error: errorMsg });
+        }
       }
+
+      broadcast({ type: 'send_progress', total: recipientList.length, current: recipientList.length, step: 'completed', success: successCount, errors: errorCount });
     });
 
-    return res.status(200).json({ status: 'success', message: 'Mensagens enfileiradas/enviadas!' });
-  } catch (err) {
-    const msg = err?.message || String(err);
-    console.log('[ERR] /api/send:', msg);
+    const endTime = new Date();
+    const duration = endTime - startTime;
+    console.log(`[${endTime.toISOString()}] [COMPLETED] Envio finalizado. Sucesso: ${successCount}, Erros: ${errorCount}. Tempo total: ${duration}ms`);
 
-    // se falhou por “page closed / browser disconnected”, tenta restart sem wipe
+    return res.status(200).json({
+      status: 'success',
+      message: `Mensagens enviadas! Sucesso: ${successCount}, Erros: ${errorCount}`,
+      stats: { success: successCount, errors: errorCount, duration: duration },
+      errors: errors.slice(0, 10) // máximo 10 erros no response
+    });
+
+  } catch (err) {
+    const endTime = new Date();
+    const duration = endTime - startTime;
+    const msg = err?.message || String(err);
+    console.log(`[${endTime.toISOString()}] [ERROR] Erro geral no /api/send após ${duration}ms:`, msg);
+
+    // se falhou por "page closed / browser disconnected", tenta restart sem wipe
     const low = msg.toLowerCase();
     if (low.includes('session closed') || low.includes('target closed') || low.includes('browser') || low.includes('protocol error')) {
       restartClient({ reason: 'send_failure_browser', wipeSession: false, doLogout: false }).catch(() => {});
