@@ -1,0 +1,10 @@
+{
+  "window_start": "00:00",
+  "window_end": "19:00",
+  "delay_min_ms": 5000,
+  "delay_max_ms": 10000,
+  "long_break_every": 25,
+  "long_break_min_ms": 600000,
+  "long_break_max_ms": 1200000,
+  "hard_stop_outside_window": false
+}

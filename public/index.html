@@ -15,7 +15,7 @@
     .card { background:#111; border:1px solid #00ff88; border-radius:0; box-shadow:0 0 20px rgba(0,255,136,.3); }
     .form-control,.form-control:focus { background:#1a1a1a; border:1px solid #00ff88; color:#00ff88; border-radius:0; }
     .form-control:focus { box-shadow:0 0 10px rgba(0,255,136,.5); }
-    h1,h2 { color:#00ff88; text-transform:uppercase; letter-spacing:1px; }
+    h1,h2,h3 { color:#00ff88; text-transform:uppercase; letter-spacing:1px; }
 
     .btn-primary { background:#00ff88; border-color:#00ff88; color:#000; text-transform:uppercase; letter-spacing:1px; border-radius:0; }
     .btn-primary:hover { background:#00cc66; border-color:#00cc66; box-shadow:0 0 15px rgba(0,255,136,.6); }
@@ -36,86 +36,40 @@
     .loading { text-align:center; font-size:1.2em; color:#00ff88; }
 
     .qr-wrap { display:flex; justify-content:center; align-items:center; }
-
-    /* ✅ QR nítido + sem filtro invert */
-    #qrCode {
-      width: 260px;
-      height: 260px;
-      border: 2px solid #00ff88;
-      image-rendering: pixelated;
-      image-rendering: crisp-edges;
-      -ms-interpolation-mode: nearest-neighbor;
-    }
+    #qrCode { width:260px; height:260px; border:2px solid #00ff88; image-rendering:pixelated; image-rendering:crisp-edges; }
 
     .message-editor {
-      background:#1a1a1a;
-      border:1px solid #00ff88;
-      padding:10px;
-      min-height:120px;
-      resize:none;
-      border-radius:0;
-      color:#00ff88;
-      white-space:pre-wrap;
-      overflow-wrap:anywhere;
+      background:#1a1a1a; border:1px solid #00ff88; padding:10px; min-height:120px;
+      resize:none; border-radius:0; color:#00ff88; white-space:pre-wrap; overflow-wrap:anywhere;
     }
     .message-editor:focus { outline:none; box-shadow:0 0 10px rgba(0,255,136,.5); }
 
     .format-toolbar { background:#111; border:1px solid #00ff88; padding:5px; margin-bottom:5px; position:relative; }
-    .format-toolbar button {
-      background:none; border:1px solid #00ff88; color:#00ff88;
-      padding:5px 10px; margin-right:5px;
-      text-transform:uppercase; letter-spacing:1px; border-radius:0;
-    }
+    .format-toolbar button { background:none; border:1px solid #00ff88; color:#00ff88; padding:5px 10px; margin-right:5px; text-transform:uppercase; letter-spacing:1px; border-radius:0; }
     .format-toolbar button:hover { background:#00ff88; color:#000; }
 
     .file-preview { display:flex; flex-wrap:wrap; gap:10px; margin-top:10px; }
     .preview-item { position:relative; border:1px solid #00ff88; padding:10px; background:#1a1a1a; }
     .preview-item img,.preview-item video { max-width:100px; max-height:100px; }
     .preview-item .file-info { margin-top:5px; font-size:12px; text-align:center; }
-    .preview-item .remove-preview {
-      position:absolute; top:5px; right:5px;
-      background:#ff0040; color:white; border:none; border-radius:50%;
-      width:20px; height:20px; cursor:pointer;
-    }
+    .preview-item .remove-preview { position:absolute; top:5px; right:5px; background:#ff0040; color:white; border:none; border-radius:50%; width:20px; height:20px; cursor:pointer; }
 
     .api-docs-btn { margin-top:30px; text-align:center; }
     .api-docs-btn button {
-      background:#00ff88; border:2px solid #00ff88; color:#000;
-      padding:15px 30px; text-transform:uppercase; letter-spacing:2px;
-      font-weight:bold; font-size:18px; border-radius:0; cursor:pointer;
-      box-shadow:0 0 20px rgba(0,255,136,.5);
+      background:#00ff88; border:2px solid #00ff88; color:#000; padding:15px 30px; text-transform:uppercase;
+      letter-spacing:2px; font-weight:bold; font-size:18px; border-radius:0; cursor:pointer; box-shadow:0 0 20px rgba(0,255,136,.5);
     }
     .api-docs-btn button:hover { background:#000; color:#00ff88; transform:scale(1.05); transition:all .3s; }
 
     .recipients-list { display:flex; flex-wrap:wrap; gap:8px; min-height:60px; align-content:flex-start; }
-    .recipient-tag {
-      display:inline-flex; align-items:center;
-      background:#00ff88; color:#000;
-      padding:6px 12px; border-radius:0;
-      font-size:14px; font-weight:bold; text-transform:uppercase; letter-spacing:1px;
-      border:none;
-      gap:8px;
-    }
+    .recipient-tag { display:inline-flex; align-items:center; background:#00ff88; color:#000; padding:6px 12px; border-radius:0; font-size:14px; font-weight:bold; text-transform:uppercase; letter-spacing:1px; border:none; gap:8px; }
     .recipient-tag .tag-sub { font-weight:normal; font-size:12px; opacity:.85; text-transform:none; letter-spacing:0; }
-    .recipient-tag .remove-tag {
-      background:none; border:none; color:#000; margin-left:6px;
-      cursor:pointer; font-size:16px; font-weight:bold; line-height:1;
-    }
+    .recipient-tag .remove-tag { background:none; border:none; color:#000; margin-left:6px; cursor:pointer; font-size:16px; font-weight:bold; line-height:1; }
     .recipient-tag .remove-tag:hover { color:#660000; }
 
-    .progress-bar-container {
-      width:100%; height:30px; background:#1a1a1a; border:1px solid #00ff88;
-      border-radius:0; overflow:hidden; margin:10px 0; display:none;
-    }
-    .progress-bar-fill {
-      height:100%; background:linear-gradient(90deg,#00ff88,#00cc66);
-      width:0%; transition:width .3s ease; position:relative;
-    }
-    .progress-bar-text {
-      position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
-      color:#000; font-weight:bold; font-size:14px; text-transform:uppercase; letter-spacing:1px;
-      white-space:nowrap;
-    }
+    .progress-bar-container { width:100%; height:30px; background:#1a1a1a; border:1px solid #00ff88; border-radius:0; overflow:hidden; margin:10px 0; display:none; }
+    .progress-bar-fill { height:100%; background:linear-gradient(90deg,#00ff88,#00cc66); width:0%; transition:width .3s ease; position:relative; }
+    .progress-bar-text { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); color:#000; font-weight:bold; font-size:14px; text-transform:uppercase; letter-spacing:1px; white-space:nowrap; }
 
     .modal-content { background:#111; border:1px solid #00ff88; color:#00ff88; border-radius:0; }
     .modal-header { border-bottom:1px solid #00ff88; }
@@ -123,32 +77,23 @@
     .btn-close { filter:invert(1) hue-rotate(75deg); }
 
     .btn-mini {
-      border:1px solid #00ff88;
-      color:#00ff88;
-      background:transparent;
-      padding:10px 14px;
-      border-radius:0;
-      text-transform:uppercase;
-      letter-spacing:1px;
-      font-weight:bold;
-      white-space:nowrap;
+      border:1px solid #00ff88; color:#00ff88; background:transparent; padding:10px 14px; border-radius:0;
+      text-transform:uppercase; letter-spacing:1px; font-weight:bold; white-space:nowrap;
     }
     .btn-mini:hover { background:#00ff88; color:#000; }
 
-    .debugbox {
-      margin-top:10px;
-      border:1px dashed #00ff88;
-      padding:10px;
-      background:#0f0f0f;
-      display:none;
-    }
-    .debugbox pre {
-      margin:0;
-      white-space:pre-wrap;
-      word-break:break-word;
-      color:#00ff88;
-      font-size:12px;
-    }
+    .panel-advanced { border:1px dashed #00ff88; padding:12px; background:#0f0f0f; }
+
+    .kpi { display:flex; flex-wrap:wrap; gap:10px; margin-top:10px; }
+    .kpi .box { flex:1; min-width:180px; border:1px solid #00ff88; background:#111; padding:10px; }
+    .kpi .title { color:#00ff88; font-weight:bold; text-transform:uppercase; font-size:12px; }
+    .kpi .value { color:#00ff88; font-size:16px; margin-top:6px; white-space:pre-wrap; word-break:break-word; }
+    .kpi .sub { color:#666; font-size:12px; margin-top:6px; }
+
+    .sim-box { border:1px solid #00ff88; background:#111; padding:12px; margin-top:10px; }
+    .sim-box pre { margin:0; white-space:pre-wrap; word-break:break-word; color:#00ff88; font-size:12px; }
+
+    .pill { display:inline-block; padding:4px 8px; border:1px solid #00ff88; color:#00ff88; background:#0f0f0f; font-size:12px; text-transform:uppercase; letter-spacing:1px; margin-right:8px; margin-bottom:8px; }
   </style>
 </head>
 <body>
@@ -160,42 +105,37 @@
         <h1 class="text-center mb-4">> WHATSAPP API <</h1>
 
         <h2>> ENVIAR MENSAGEM</h2>
+
         <form id="messageForm" action="/api/send" method="POST" enctype="multipart/form-data" class="mb-4" accept-charset="UTF-8">
           <div class="mb-3">
             <label for="recipientsInput" class="form-label">DESTINATÁRIOS</label>
 
             <div style="display:flex; gap:10px; margin-bottom:10px;">
-              <input type="text" id="recipientsInput" class="form-control"
-                     placeholder="Digite telefone ou nome do grupo..." style="flex:1;">
+              <input type="text" id="recipientsInput" class="form-control" placeholder="Digite telefone ou nome do grupo..." style="flex:1;">
               <button type="button" id="addRecipientBtn" class="btn-mini">+ ADICIONAR</button>
               <button type="button" id="importContactsBtn" class="btn-mini">📁 IMPORTAR JSON</button>
+              <button type="button" id="toggleAdvancedBtn" class="btn-mini">⚙️ AVANÇADO</button>
+            </div>
+
+            <div class="kpi">
+              <div class="box">
+                <div class="title">CONTATOS NA LISTA</div>
+                <div class="value" id="kpiCount">0</div>
+                <div class="sub" id="kpiHint">Nenhum destinatário adicionado</div>
+              </div>
+              <div class="box">
+                <div class="title">PRÉVIA (1º DESTINATÁRIO)</div>
+                <div class="value" id="kpiPreview">(adicione destinatários)</div>
+                <div class="sub">variáveis: $nome, $email, $telefone, $telefone_formatado</div>
+              </div>
             </div>
 
             <div id="recipientsList" class="recipients-list"
-                 style="min-height:50px; border:1px solid #00ff88; padding:10px; border-radius:0; background:#1a1a1a; margin-bottom:10px;">
+                 style="min-height:50px; border:1px solid #00ff88; padding:10px; border-radius:0; background:#1a1a1a; margin-top:10px;">
               <div class="muted" style="color:#666;">Nenhum destinatário adicionado</div>
             </div>
 
             <input type="hidden" id="recipients" name="recipients" value="[]">
-
-            <div class="muted mt-1">
-              DICA: JSON pode ser:
-              [{"nome":"JOÃO","email":"a@b.com","telefones":["(11)99999-9999"]}]
-              <br>
-              Variáveis: $nome, $email, $telefone, $telefone_formatado, $grupo (se for grupo)
-            </div>
-
-            <div class="debugbox" id="debugBox">
-              <div class="muted">DEBUG recipients hidden:</div>
-              <pre id="debugRecipients"></pre>
-            </div>
-          </div>
-
-          <div class="mb-3">
-            <label for="delayInput" class="form-label">TEMPO ENTRE MENSAGENS (SEGUNDOS)</label>
-            <input type="number" id="delayInput" name="delay" class="form-control"
-                   value="1.2" min="0" max="60" step="0.1" placeholder="1.2">
-            <div class="muted mt-1">TEMPO DE ESPERA ENTRE O ENVIO DE UMA MENSAGEM E OUTRA. PADRÃO: 1.2 SEGUNDOS.</div>
           </div>
 
           <div class="mb-3">
@@ -223,6 +163,85 @@
             <div class="muted mt-1">ARRASTE E SOLTE IMAGENS, PDFS OU VIDEOS AQUI.</div>
             <div class="file-preview" id="filePreview"></div>
           </div>
+
+          <!-- ✅ AVANÇADO -->
+          <div class="mb-3" id="advancedPanel" style="display:none;">
+            <div class="panel-advanced">
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
+                <h3 style="margin:0;">AVANÇADO</h3>
+                <div class="muted" id="advancedStatus">(simulação automática)</div>
+              </div>
+
+              <div class="sim-box mt-3">
+                <div class="pill" id="pillWindow">JANELA: 08:00–19:00</div>
+                <div class="pill" id="pillDelay">DELAY: 45–110s</div>
+                <div class="pill" id="pillBreak">PAUSA LONGA: a cada 25</div>
+                <div class="pill" id="pillTotal">TOTAL: 0</div>
+                <div class="pill" id="pillStart">INÍCIO: --</div>
+                <div class="pill" id="pillEnd">FIM: --</div>
+              </div>
+
+              <div class="row g-2 mt-2">
+                <div class="col-md-3">
+                  <label class="form-label muted">JANELA INÍCIO</label>
+                  <input type="time" class="form-control" id="windowStart" value="08:00">
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label muted">JANELA FIM</label>
+                  <input type="time" class="form-control" id="windowEnd" value="19:00">
+                </div>
+
+                <div class="col-md-3">
+                  <label class="form-label muted">DELAY MÍN (SEG)</label>
+                  <input type="number" class="form-control" id="delayMinSec" value="45" min="0" max="600" step="1">
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label muted">DELAY MÁX (SEG)</label>
+                  <input type="number" class="form-control" id="delayMaxSec" value="110" min="0" max="600" step="1">
+                </div>
+
+                <div class="col-md-4">
+                  <label class="form-label muted">PAUSA LONGA A CADA (msgs)</label>
+                  <input type="number" class="form-control" id="longEvery" value="25" min="0" max="5000" step="1">
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label muted">PAUSA LONGA MÍN (min)</label>
+                  <input type="number" class="form-control" id="longMinMin" value="10" min="0" max="360" step="1">
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label muted">PAUSA LONGA MÁX (min)</label>
+                  <input type="number" class="form-control" id="longMaxMin" value="20" min="0" max="360" step="1">
+                </div>
+              </div>
+
+              <div class="muted mt-2">
+                <div>• A simulação considera o número de contatos atual.</div>
+                <div>• Mostra estimativa MÍN / MÉDIA / MÁX e respeita a janela (se estourar, continua no próximo dia).</div>
+              </div>
+
+              <div class="sim-box mt-3">
+                <div class="title" style="color:#00ff88; font-weight:bold; text-transform:uppercase; font-size:12px;">SIMULAÇÃO</div>
+                <pre id="simulationText">Adicione destinatários para simular.</pre>
+              </div>
+
+              <div class="sim-box mt-3">
+                <div class="title" style="color:#00ff88; font-weight:bold; text-transform:uppercase; font-size:12px;">EXEMPLO DE APLICAÇÃO DE VARIÁVEIS (1º DESTINATÁRIO)</div>
+                <pre id="previewAdvanced">(adicione destinatários)</pre>
+              </div>
+
+              <!-- ✅ BOTÃO SALVAR CONFIG -->
+              <div class="mt-3" style="display:flex; gap:10px; flex-wrap:wrap;">
+                <button type="button" class="btn btn-success" id="btnSavePlan" style="flex:1; min-width:220px;">SALVAR CONFIGURAÇÃO</button>
+                <button type="button" class="btn btn-outline-secondary" id="btnLoadPlan" style="flex:1; min-width:220px;">CARREGAR CONFIGURAÇÃO</button>
+                <button type="button" class="btn btn-outline-danger" id="btnResetPlan" style="flex:1; min-width:220px;">RESETAR PADRÃO</button>
+              </div>
+
+              <div class="muted mt-2" id="planSaveHint">A configuração salva fica no navegador (localStorage) e também pode ser enviada ao backend se existir /api/plan.</div>
+            </div>
+          </div>
+
+          <input type="hidden" id="planInput" name="plan" value="">
+          <input type="hidden" id="delayInput" name="delay" value="1.2">
 
           <div class="progress-bar-container" id="progressContainer">
             <div class="progress-bar-fill" id="progressBar">
@@ -292,23 +311,10 @@
 <script src="/config.js"></script>
 
 <script>
-  console.log('[SCRIPT START] Loading index.html script');
-  console.log('Bootstrap loaded:', typeof bootstrap);
-  console.log('EmojiPicker loaded:', typeof EmojiPicker);
-
   let qrModalInstance = null;
   let ws = null;
   let attachedFiles = [];
   let recipients = [];
-  const DEBUG = !!window.__DEBUG_RECIPIENTS__;
-
-  function showDebug() {
-    const box = document.getElementById('debugBox');
-    const pre = document.getElementById('debugRecipients');
-    if (!DEBUG) { box.style.display = 'none'; return; }
-    box.style.display = 'block';
-    pre.textContent = document.getElementById('recipients').value || '';
-  }
 
   function escapeHtml(str) {
     return String(str ?? '')
@@ -332,6 +338,533 @@
     messageModal.show();
   }
 
+  // ===========
+  // TEXT/VARS
+  // ===========
+  function normalizeNewlines(s) {
+    let t = String(s ?? '');
+    t = t.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    t = t.replace(/\u2028|\u2029/g, '\n');
+    t = t.replace(/\u00A0/g, ' ');
+    t = t.replace(/[ \t]+\n/g, '\n');
+    return t;
+  }
+
+  function applyTemplateVars(text, vars) {
+    const src = normalizeNewlines(text);
+    const dict = {};
+    if (vars && typeof vars === 'object') {
+      for (const [k, v] of Object.entries(vars)) {
+        const key = String(k || '').trim().toLowerCase();
+        if (!key) continue;
+        if (v === null || v === undefined) continue;
+        dict[key] = (typeof v === 'string') ? v : String(v);
+      }
+    }
+    return src.replace(/\$([a-zA-Z0-9_]+)/g, (m, k) => {
+      const key = String(k).toLowerCase();
+      return (dict[key] !== undefined) ? dict[key] : m;
+    });
+  }
+
+  function getEditorPlainTextPreserveLines() {
+    const editor = document.getElementById('messageEditor');
+    let t = editor.innerText || '';
+    t = t.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    t = t.replace(/\u2028|\u2029/g, '\n');
+    t = t.replace(/\u00A0/g, ' ');
+    t = t.replace(/[ \t]+\n/g, '\n');
+    return t;
+  }
+
+  function updateHiddenTextarea() {
+    document.getElementById('message').value = getEditorPlainTextPreserveLines();
+  }
+
+  function surroundSelection(prefix) {
+    const editor = document.getElementById('messageEditor');
+    editor.focus();
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    if (!editor.contains(range.commonAncestorContainer)) return;
+    const selected = range.toString();
+    const insert = prefix + selected + prefix;
+    range.deleteContents();
+    range.insertNode(document.createTextNode(insert));
+  }
+
+  function insertAtCursor(text) {
+    const editor = document.getElementById('messageEditor');
+    editor.focus();
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) {
+      editor.appendChild(document.createTextNode(text));
+      return;
+    }
+    const range = sel.getRangeAt(0);
+    if (!editor.contains(range.commonAncestorContainer)) {
+      editor.appendChild(document.createTextNode(text));
+      return;
+    }
+    range.deleteContents();
+    range.insertNode(document.createTextNode(text));
+    range.collapse(false);
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+
+  function initEmojiPicker() {
+    const picker = new EmojiPicker();
+    const emojiBtn = document.getElementById('emojiBtn');
+    const container = document.getElementById('emojiPicker');
+
+    container.appendChild(picker);
+
+    picker.style.display = 'none';
+    picker.style.position = 'absolute';
+    picker.style.right = '0';
+    picker.style.top = '38px';
+    picker.style.zIndex = '1000';
+
+    emojiBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      picker.style.display = picker.style.display === 'none' ? 'block' : 'none';
+    });
+
+    picker.addEventListener('emoji-click', (event) => {
+      const emoji = event.detail.emoji.unicode;
+      insertAtCursor(emoji);
+      picker.style.display = 'none';
+    });
+
+    document.addEventListener('click', (e) => {
+      if (e.target === emojiBtn) return;
+      if (container.contains(e.target)) return;
+      picker.style.display = 'none';
+    });
+  }
+
+  // ===========
+  // ADVANCED UI + SAVE/LOAD
+  // ===========
+  const PLAN_STORAGE_KEY = 'WA_SEND_PLAN_V1';
+
+  function toggleAdvanced() {
+    const panel = document.getElementById('advancedPanel');
+    const btn = document.getElementById('toggleAdvancedBtn');
+    const open = panel.style.display !== 'none';
+    panel.style.display = open ? 'none' : 'block';
+    btn.textContent = open ? '⚙️ AVANÇADO' : '✖ FECHAR AVANÇADO';
+    if (!open) {
+      refreshSimulation();
+      refreshPreviewKpis();
+    }
+  }
+
+  function timeToMin(hhmm) {
+    const m = String(hhmm || '').trim().match(/^(\d{1,2}):(\d{2})$/);
+    if (!m) return 0;
+    const hh = Math.max(0, Math.min(23, Number(m[1])));
+    const mm = Math.max(0, Math.min(59, Number(m[2])));
+    return hh * 60 + mm;
+  }
+
+  function fmtHHMM(d) {
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    return `${hh}:${mm}`;
+  }
+
+  function fmtDateTime(d) {
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mo = String(d.getMonth() + 1).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    return `${dd}/${mo}/${yyyy} ${fmtHHMM(d)}`;
+  }
+
+  function addMinutes(date, minutes) {
+    const d = new Date(date.getTime());
+    d.setMinutes(d.getMinutes() + minutes);
+    return d;
+  }
+
+  function isWithinWindow(minNow, minStart, minEnd) {
+    if (minStart === minEnd) return true;
+    if (minStart < minEnd) return (minNow >= minStart && minNow < minEnd);
+    return (minNow >= minStart || minNow < minEnd);
+  }
+
+  function nextWindowStart(fromDate, minStart, minEnd) {
+    const d = new Date(fromDate.getTime());
+    const nowMin = d.getHours() * 60 + d.getMinutes();
+
+    if (minStart < minEnd) {
+      if (nowMin < minStart) {
+        d.setHours(Math.floor(minStart / 60), minStart % 60, 0, 0);
+        return d;
+      }
+      if (nowMin >= minEnd) {
+        d.setDate(d.getDate() + 1);
+        d.setHours(Math.floor(minStart / 60), minStart % 60, 0, 0);
+        return d;
+      }
+      d.setSeconds(0, 0);
+      return d;
+    }
+
+    const inWin = isWithinWindow(nowMin, minStart, minEnd);
+    if (inWin) { d.setSeconds(0, 0); return d; }
+    d.setHours(Math.floor(minStart / 60), minStart % 60, 0, 0);
+    return d;
+  }
+
+  function consumeWorkTime(startDate, minStart, minEnd, workMs) {
+    let cur = new Date(startDate.getTime());
+    let remain = Math.max(0, Number(workMs || 0));
+
+    while (remain > 0) {
+      const curMin = cur.getHours() * 60 + cur.getMinutes();
+
+      if (!isWithinWindow(curMin, minStart, minEnd)) {
+        cur = nextWindowStart(cur, minStart, minEnd);
+        continue;
+      }
+
+      let endToday = new Date(cur.getTime());
+      if (minStart < minEnd) {
+        endToday.setHours(Math.floor(minEnd / 60), minEnd % 60, 0, 0);
+      } else {
+        if (curMin >= minStart) {
+          endToday.setDate(endToday.getDate() + 1);
+          endToday.setHours(Math.floor(minEnd / 60), minEnd % 60, 0, 0);
+        } else {
+          endToday.setHours(Math.floor(minEnd / 60), minEnd % 60, 0, 0);
+        }
+      }
+
+      const avail = Math.max(0, endToday.getTime() - cur.getTime());
+
+      if (remain <= avail) {
+        cur = new Date(cur.getTime() + remain);
+        remain = 0;
+        break;
+      } else {
+        cur = new Date(endToday.getTime() + 1000);
+        remain -= avail;
+      }
+    }
+
+    return cur;
+  }
+
+  function estimateWorkMs(n, plan, mode) {
+    const total = Math.max(0, Number(n || 0));
+    if (total <= 1) return 0;
+
+    const gaps = total - 1;
+
+    const dMin = Math.max(0, Number(plan.delay_min_ms || 0));
+    const dMax = Math.max(dMin, Number(plan.delay_max_ms || 0));
+    const dAvg = Math.round((dMin + dMax) / 2);
+
+    const every = Math.max(0, Number(plan.long_break_every || 0));
+    const lbMin = Math.max(0, Number(plan.long_break_min_ms || 0));
+    const lbMax = Math.max(lbMin, Number(plan.long_break_max_ms || 0));
+    const lbAvg = Math.round((lbMin + lbMax) / 2);
+
+    const longBreaks = (every > 0) ? Math.floor((gaps) / every) : 0;
+
+    const delayPer = (mode === 'min') ? dMin : (mode === 'max') ? dMax : dAvg;
+    const breakPer = (mode === 'min') ? lbMin : (mode === 'max') ? lbMax : lbAvg;
+
+    return (gaps * delayPer) + (longBreaks * breakPer);
+  }
+
+  function fmtDuration(ms) {
+    let s = Math.max(0, Math.floor(ms / 1000));
+    const days = Math.floor(s / 86400); s -= days * 86400;
+    const hh = Math.floor(s / 3600); s -= hh * 3600;
+    const mm = Math.floor(s / 60); s -= mm * 60;
+
+    const parts = [];
+    if (days) parts.push(`${days}d`);
+    if (hh || days) parts.push(`${String(hh).padStart(2,'0')}h`);
+    parts.push(`${String(mm).padStart(2,'0')}m`);
+    parts.push(`${String(s).padStart(2,'0')}s`);
+    return parts.join(' ');
+  }
+
+  function buildExampleTimeline(n, plan, sampleCount = 10) {
+    const total = Math.max(0, Number(n || 0));
+    if (total <= 1) return [];
+
+    const gaps = total - 1;
+    const take = Math.min(gaps, sampleCount);
+
+    const dMin = Math.max(0, Number(plan.delay_min_ms || 0));
+    const dMax = Math.max(dMin, Number(plan.delay_max_ms || 0));
+
+    const every = Math.max(0, Number(plan.long_break_every || 0));
+    const lbMin = Math.max(0, Number(plan.long_break_min_ms || 0));
+    const lbMax = Math.max(lbMin, Number(plan.long_break_max_ms || 0));
+
+    function randInt(a, b) {
+      a = Math.ceil(a); b = Math.floor(b);
+      if (b <= a) return a;
+      return Math.floor(Math.random() * (b - a + 1)) + a;
+    }
+
+    const arr = [];
+    for (let i = 1; i <= take; i++) {
+      const isLong = (every > 0) ? (i % every === 0) : false;
+      if (isLong) arr.push({ kind: 'PAUSA_LONGA', ms: randInt(lbMin, lbMax) });
+      else arr.push({ kind: 'DELAY', ms: randInt(dMin, dMax) });
+    }
+    return arr;
+  }
+
+  function buildPlanPayload() {
+    const wsVal = document.getElementById('windowStart').value || '08:00';
+    const weVal = document.getElementById('windowEnd').value || '19:00';
+
+    const dmin = Math.max(0, Number(document.getElementById('delayMinSec').value || 45));
+    const dmax = Math.max(dmin, Number(document.getElementById('delayMaxSec').value || 110));
+
+    const every = Math.max(0, Number(document.getElementById('longEvery').value || 25));
+    const lmin = Math.max(0, Number(document.getElementById('longMinMin').value || 10));
+    const lmax = Math.max(lmin, Number(document.getElementById('longMaxMin').value || 20));
+
+    return {
+      window_start: wsVal,
+      window_end: weVal,
+      delay_min_ms: Math.round(dmin * 1000),
+      delay_max_ms: Math.round(dmax * 1000),
+      long_break_every: every,
+      long_break_min_ms: Math.round(lmin * 60 * 1000),
+      long_break_max_ms: Math.round(lmax * 60 * 1000),
+      hard_stop_outside_window: false
+    };
+  }
+
+  function applyPlanToInputs(plan) {
+    if (!plan || typeof plan !== 'object') return;
+
+    if (plan.window_start) document.getElementById('windowStart').value = plan.window_start;
+    if (plan.window_end) document.getElementById('windowEnd').value = plan.window_end;
+
+    if (Number.isFinite(plan.delay_min_ms)) document.getElementById('delayMinSec').value = Math.round(plan.delay_min_ms / 1000);
+    if (Number.isFinite(plan.delay_max_ms)) document.getElementById('delayMaxSec').value = Math.round(plan.delay_max_ms / 1000);
+
+    if (Number.isFinite(plan.long_break_every)) document.getElementById('longEvery').value = plan.long_break_every;
+    if (Number.isFinite(plan.long_break_min_ms)) document.getElementById('longMinMin').value = Math.round(plan.long_break_min_ms / 60000);
+    if (Number.isFinite(plan.long_break_max_ms)) document.getElementById('longMaxMin').value = Math.round(plan.long_break_max_ms / 60000);
+
+    refreshSimulation();
+  }
+
+  function savePlanLocal(plan) {
+    localStorage.setItem(PLAN_STORAGE_KEY, JSON.stringify(plan));
+  }
+
+  function loadPlanLocal() {
+    const raw = localStorage.getItem(PLAN_STORAGE_KEY);
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch { return null; }
+  }
+
+  async function trySavePlanBackend(plan) {
+    // opcional: se existir endpoint, ele salva em arquivo no servidor
+    try {
+      const resp = await fetch('/api/plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(plan)
+      });
+      if (!resp.ok) return false;
+      const data = await resp.json().catch(() => null);
+      if (!data) return true;
+      if (data.status && data.status !== 'success') return false;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function tryLoadPlanBackend() {
+    // opcional: se existir endpoint, ele carrega do servidor
+    try {
+      const resp = await fetch('/api/plan', { cache: 'no-store' });
+      if (!resp.ok) return null;
+      return await resp.json();
+    } catch {
+      return null;
+    }
+  }
+
+  async function onSavePlanClick() {
+    const plan = buildPlanPayload();
+
+    // salva no browser
+    savePlanLocal(plan);
+
+    // tenta salvar no backend, se existir
+    const okServer = await trySavePlanBackend(plan);
+
+    showMessageModal(
+      'CONFIGURAÇÃO SALVA',
+      okServer
+        ? 'SALVO NO NAVEGADOR E NO SERVIDOR.'
+        : 'SALVO NO NAVEGADOR. (BACKEND /api/plan NÃO RESPONDEU OU NÃO EXISTE)',
+      okServer ? 'success' : 'info'
+    );
+
+    refreshSimulation();
+  }
+
+  async function onLoadPlanClick() {
+    // tenta primeiro do servidor
+    const serverPlan = await tryLoadPlanBackend();
+    if (serverPlan && typeof serverPlan === 'object') {
+      applyPlanToInputs(serverPlan);
+      savePlanLocal(serverPlan);
+      showMessageModal('CONFIGURAÇÃO', 'CARREGADA DO SERVIDOR E APLICADA.', 'success');
+      return;
+    }
+
+    // fallback local
+    const localPlan = loadPlanLocal();
+    if (localPlan) {
+      applyPlanToInputs(localPlan);
+      showMessageModal('CONFIGURAÇÃO', 'CARREGADA DO NAVEGADOR E APLICADA.', 'success');
+      return;
+    }
+
+    showMessageModal('CONFIGURAÇÃO', 'NENHUMA CONFIGURAÇÃO SALVA ENCONTRADA.', 'warning');
+  }
+
+  async function onResetPlanClick() {
+    const def = {
+      window_start: '08:00',
+      window_end: '19:00',
+      delay_min_ms: 45000,
+      delay_max_ms: 110000,
+      long_break_every: 25,
+      long_break_min_ms: 10 * 60 * 1000,
+      long_break_max_ms: 20 * 60 * 1000,
+      hard_stop_outside_window: false
+    };
+    applyPlanToInputs(def);
+    savePlanLocal(def);
+    await trySavePlanBackend(def).catch(() => {});
+    showMessageModal('CONFIGURAÇÃO', 'RESETADO PARA O PADRÃO.', 'success');
+  }
+
+  // ===========
+  // SIMULAÇÃO
+  // ===========
+  function refreshPreviewKpis() {
+    const msg = getEditorPlainTextPreserveLines();
+    const first = recipients[0] || null;
+
+    document.getElementById('kpiCount').textContent = String(recipients.length);
+
+    if (!recipients.length) {
+      document.getElementById('kpiHint').textContent = 'Nenhum destinatário adicionado';
+      document.getElementById('kpiPreview').textContent = '(adicione destinatários)';
+      document.getElementById('previewAdvanced').textContent = '(adicione destinatários)';
+      return;
+    }
+
+    document.getElementById('kpiHint').textContent = `Pronto para enviar para ${recipients.length} contato(s).`;
+
+    const vars = (first && first.vars && typeof first.vars === 'object') ? first.vars : {};
+    const preview = applyTemplateVars(msg, vars);
+    const safePreview = preview.trim().length ? preview : '(mensagem vazia)';
+    document.getElementById('kpiPreview').textContent = safePreview.slice(0, 180) + (safePreview.length > 180 ? '...' : '');
+    document.getElementById('previewAdvanced').textContent = safePreview;
+  }
+
+  function refreshSimulation() {
+    const panel = document.getElementById('advancedPanel');
+    if (panel.style.display === 'none') return;
+
+    const plan = buildPlanPayload();
+    const n = recipients.length;
+
+    const startMin = timeToMin(plan.window_start);
+    const endMin = timeToMin(plan.window_end);
+
+    const now = new Date();
+    const startAt = nextWindowStart(now, startMin, endMin);
+
+    const msMin = estimateWorkMs(n, plan, 'min');
+    const msAvg = estimateWorkMs(n, plan, 'avg');
+    const msMax = estimateWorkMs(n, plan, 'max');
+
+    const endAtMin = consumeWorkTime(startAt, startMin, endMin, msMin);
+    const endAtAvg = consumeWorkTime(startAt, startMin, endMin, msAvg);
+    const endAtMax = consumeWorkTime(startAt, startMin, endMin, msMax);
+
+    document.getElementById('pillWindow').textContent = `JANELA: ${plan.window_start}–${plan.window_end}`;
+    document.getElementById('pillDelay').textContent = `DELAY: ${Math.round(plan.delay_min_ms/1000)}–${Math.round(plan.delay_max_ms/1000)}s`;
+    document.getElementById('pillBreak').textContent = `PAUSA LONGA: a cada ${plan.long_break_every || 0}`;
+    document.getElementById('pillTotal').textContent = `TOTAL: ${n}`;
+    document.getElementById('pillStart').textContent = `INÍCIO: ${fmtDateTime(startAt)}`;
+    document.getElementById('pillEnd').textContent = `FIM: ${n <= 1 ? fmtDateTime(startAt) : fmtDateTime(endAtAvg)}`;
+
+    const sim = document.getElementById('simulationText');
+
+    if (!n) {
+      sim.textContent = 'Adicione destinatários para simular.';
+      document.getElementById('advancedStatus').textContent = '(simulação automática)';
+      return;
+    }
+
+    const longBreaks = (() => {
+      if (n <= 1) return 0;
+      const gaps = n - 1;
+      const every = Math.max(0, Number(plan.long_break_every || 0));
+      if (!every) return 0;
+      return Math.floor(gaps / every);
+    })();
+
+    const timeline = buildExampleTimeline(n, plan, 12);
+    const timelineText = timeline.map((x, idx) => {
+      const t = fmtDuration(x.ms);
+      const tag = x.kind === 'PAUSA_LONGA' ? 'PAUSA LONGA' : 'DELAY';
+      return `${String(idx+1).padStart(2,'0')}. ${tag}: ${t}`;
+    }).join('\n');
+
+    const lines = [];
+    lines.push(`CONTATOS: ${n}`);
+    lines.push(`JANELA: ${plan.window_start}–${plan.window_end}`);
+    lines.push(`INÍCIO ESTIMADO: ${fmtDateTime(startAt)}`);
+    lines.push(`PAUSAS LONGAS (aprox.): ${longBreaks}`);
+    lines.push('');
+    lines.push(`DURAÇÃO (MÍN):   ${fmtDuration(msMin)}   -> FIM: ${fmtDateTime(endAtMin)}`);
+    lines.push(`DURAÇÃO (MÉDIA): ${fmtDuration(msAvg)}   -> FIM: ${fmtDateTime(endAtAvg)}`);
+    lines.push(`DURAÇÃO (MÁX):   ${fmtDuration(msMax)}   -> FIM: ${fmtDateTime(endAtMax)}`);
+    lines.push('');
+    lines.push('EXEMPLO (primeiros intervalos):');
+    lines.push(timelineText || '(sem intervalos)');
+
+    sim.textContent = lines.join('\n');
+    document.getElementById('advancedStatus').textContent = `(atualizado: ${fmtHHMM(new Date())})`;
+  }
+
+  function bindSimulationInputs() {
+    const ids = ['windowStart','windowEnd','delayMinSec','delayMaxSec','longEvery','longMinMin','longMaxMin'];
+    ids.forEach(id => {
+      const el = document.getElementById(id);
+      el.addEventListener('input', () => { refreshSimulation(); });
+      el.addEventListener('change', () => { refreshSimulation(); });
+    });
+  }
+
+  // ===========
+  // STATUS/QR (mantido)
+  // ===========
   async function loadStatus() {
     try {
       const r = await fetch('/api/status', { cache: 'no-store' });
@@ -500,12 +1033,25 @@
           if (data.state) stateHint.textContent = `ESTADO: ${data.state}`;
         }
 
+        if (data.type === 'send_pause_window') {
+          showProgress();
+          updateProgress(0, 1, data.message || 'FORA DA JANELA...');
+        }
+
+        if (data.type === 'send_break') {
+          const kind = data.kind === 'long' ? 'PAUSA LONGA' : 'PAUSA';
+          const sec = Math.round((data.waitMs || 0) / 1000);
+          updateProgress(parseInt((document.getElementById('progressText').dataset.cur || '0'), 10), 1, `${kind}: ${sec}s`);
+        }
+
         if (data.type === 'send_progress') {
           if (data.step === 'starting') {
             showProgress();
             updateProgress(0, data.total, 'INICIANDO...');
           } else if (data.step === 'sending') {
-            updateProgress(data.current, data.total, `${data.recipient}`);
+            updateProgress(data.current, data.total, `${data.recipient || ''}`);
+          } else if (data.step === 'paused') {
+            updateProgress(data.current || 0, data.total || 1, data.message || 'PAUSADO');
           } else if (data.step === 'completed') {
             updateProgress(data.total, data.total, `${data.success}/${data.total} - CONCLUÍDO!`);
             setTimeout(() => {
@@ -522,89 +1068,9 @@
     }
   }
 
-  function getEditorPlainTextPreserveLines() {
-    const editor = document.getElementById('messageEditor');
-    let t = editor.innerText || '';
-    t = t.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-    t = t.replace(/\u2028|\u2029/g, '\n');
-    t = t.replace(/\u00A0/g, ' ');
-    t = t.replace(/[ \t]+\n/g, '\n');
-    return t;
-  }
-
-  function updateHiddenTextarea() {
-    document.getElementById('message').value = getEditorPlainTextPreserveLines();
-  }
-
-  function surroundSelection(prefix) {
-    const editor = document.getElementById('messageEditor');
-    editor.focus();
-
-    const sel = window.getSelection();
-    if (!sel || sel.rangeCount === 0) return;
-
-    const range = sel.getRangeAt(0);
-    if (!editor.contains(range.commonAncestorContainer)) return;
-
-    const selected = range.toString();
-    const insert = prefix + selected + prefix;
-
-    range.deleteContents();
-    range.insertNode(document.createTextNode(insert));
-  }
-
-  function insertAtCursor(text) {
-    const editor = document.getElementById('messageEditor');
-    editor.focus();
-
-    const sel = window.getSelection();
-    if (!sel || sel.rangeCount === 0) {
-      editor.appendChild(document.createTextNode(text));
-      return;
-    }
-    const range = sel.getRangeAt(0);
-    if (!editor.contains(range.commonAncestorContainer)) {
-      editor.appendChild(document.createTextNode(text));
-      return;
-    }
-    range.deleteContents();
-    range.insertNode(document.createTextNode(text));
-    range.collapse(false);
-    sel.removeAllRanges();
-    sel.addRange(range);
-  }
-
-  function initEmojiPicker() {
-    const picker = new EmojiPicker();
-    const emojiBtn = document.getElementById('emojiBtn');
-    const container = document.getElementById('emojiPicker');
-
-    container.appendChild(picker);
-
-    picker.style.display = 'none';
-    picker.style.position = 'absolute';
-    picker.style.right = '0';
-    picker.style.top = '38px';
-    picker.style.zIndex = '1000';
-
-    emojiBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      picker.style.display = picker.style.display === 'none' ? 'block' : 'none';
-    });
-
-    picker.addEventListener('emoji-click', (event) => {
-      const emoji = event.detail.emoji.unicode;
-      insertAtCursor(emoji);
-      picker.style.display = 'none';
-    });
-
-    document.addEventListener('click', (e) => {
-      if (e.target === emojiBtn) return;
-      if (container.contains(e.target)) return;
-      picker.style.display = 'none';
-    });
-  }
-
+  // ===========
+  // FILES (mantido)
+  // ===========
   function initDragDrop() {
     const editor = document.getElementById('messageEditor');
     const previewContainer = document.getElementById('filePreview');
@@ -632,11 +1098,11 @@
           continue;
         }
         attachedFiles.push(file);
-        renderPreview(file, attachedFiles.length - 1);
+        renderPreview(file);
       }
     }
 
-    function renderPreview(file, index) {
+    function renderPreview(file) {
       const itemDiv = document.createElement('div');
       itemDiv.className = 'preview-item';
 
@@ -645,7 +1111,8 @@
       removeBtn.type = 'button';
       removeBtn.textContent = '×';
       removeBtn.addEventListener('click', () => {
-        attachedFiles.splice(index, 1);
+        const idx = attachedFiles.indexOf(file);
+        if (idx >= 0) attachedFiles.splice(idx, 1);
         itemDiv.remove();
         updateFileInputs();
       });
@@ -698,10 +1165,12 @@
     }
   }
 
+  // ===========
+  // RECIPIENTS (mantido)
+  // ===========
   function updateRecipientsHidden() {
     const hiddenInput = document.getElementById('recipients');
     hiddenInput.value = JSON.stringify(recipients);
-    showDebug();
   }
 
   function updateRecipientsList() {
@@ -710,6 +1179,8 @@
     if (recipients.length === 0) {
       list.innerHTML = '<div class="muted" style="color:#666;">Nenhum destinatário adicionado</div>';
       updateRecipientsHidden();
+      refreshPreviewKpis();
+      refreshSimulation();
       return;
     }
 
@@ -750,6 +1221,8 @@
     list.appendChild(wrapper);
 
     updateRecipientsHidden();
+    refreshPreviewKpis();
+    refreshSimulation();
   }
 
   function addRecipientFromRaw(raw, vars = {}) {
@@ -869,11 +1342,17 @@
     setTimeout(() => fileInput.remove(), 2000);
   }
 
+  // ===========
+  // PROGRESS
+  // ===========
   function showProgress() { document.getElementById('progressContainer').style.display = 'block'; }
   function hideProgress() { document.getElementById('progressContainer').style.display = 'none'; }
+
   function updateProgress(current, total, text = null) {
     const progressBar = document.getElementById('progressBar');
     const progressText = document.getElementById('progressText');
+
+    progressText.dataset.cur = String(current);
 
     const percentage = total > 0 ? Math.round((current / total) * 100) : 0;
     progressBar.style.width = percentage + '%';
@@ -882,7 +1361,22 @@
     if (current >= total) setTimeout(() => hideProgress(), 2000);
   }
 
+  // ===========
+  // SUBMIT
+  // ===========
   document.addEventListener('DOMContentLoaded', async () => {
+    // carrega automaticamente a config salva (servidor -> local)
+    try {
+      const serverPlan = await tryLoadPlanBackend();
+      if (serverPlan && typeof serverPlan === 'object') {
+        applyPlanToInputs(serverPlan);
+        savePlanLocal(serverPlan);
+      } else {
+        const localPlan = loadPlanLocal();
+        if (localPlan) applyPlanToInputs(localPlan);
+      }
+    } catch {}
+
     recipients = [];
     updateRecipientsList();
 
@@ -897,18 +1391,30 @@
 
     document.getElementById('addRecipientBtn').addEventListener('click', (e) => { e.preventDefault(); addRecipient(); });
     document.getElementById('importContactsBtn').addEventListener('click', (e) => { e.preventDefault(); importContacts(); });
+    document.getElementById('toggleAdvancedBtn').addEventListener('click', (e) => { e.preventDefault(); toggleAdvanced(); });
 
     document.getElementById('recipientsInput').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        addRecipient();
-      }
+      if (e.key === 'Enter') { e.preventDefault(); addRecipient(); }
     });
 
     document.getElementById('btnRefreshQR').addEventListener('click', async (e) => {
       e.preventDefault();
       await fetchAndShowQr();
     });
+
+    document.getElementById('messageEditor').addEventListener('input', () => {
+      refreshPreviewKpis();
+      refreshSimulation();
+    });
+
+    bindSimulationInputs();
+
+    // ✅ binds do botão salvar/carregar/resetar (avançado)
+    document.getElementById('btnSavePlan').addEventListener('click', (e) => { e.preventDefault(); onSavePlanClick(); });
+    document.getElementById('btnLoadPlan').addEventListener('click', (e) => { e.preventDefault(); onLoadPlanClick(); });
+    document.getElementById('btnResetPlan').addEventListener('click', (e) => { e.preventDefault(); onResetPlanClick(); });
+
+    refreshPreviewKpis();
 
     document.getElementById('messageForm').addEventListener('submit', async function(event) {
       event.preventDefault();
@@ -927,6 +1433,12 @@
         return;
       }
 
+      // ✅ injeta o plan no form
+      const plan = buildPlanPayload();
+      document.getElementById('planInput').value = JSON.stringify(plan);
+
+      refreshSimulation();
+
       const formData = new FormData(this);
 
       const submitButton = document.getElementById('btnSend');
@@ -942,7 +1454,7 @@
         submitButton.textContent = original;
 
         if (data && data.status === 'success') {
-          showMessageModal('SUCESSO', data.message || 'MENSAGEM ENVIADA COM SUCESSO!', 'success');
+          showMessageModal('SUCESSO', data.message || 'ENVIO ENFILEIRADO!', 'success');
 
           this.reset();
           document.getElementById('messageEditor').innerText = '';
@@ -951,6 +1463,8 @@
           recipients = [];
           updateRecipientsList();
 
+          const adv = document.getElementById('advancedPanel');
+          if (adv.style.display !== 'none') toggleAdvanced();
         } else {
           const emsg = (data && (data.message || data.error)) ? (data.message || data.error) : 'FALHA AO ENVIAR.';
           showMessageModal('ERRO', 'ERRO AO ENVIAR MENSAGEM: ' + emsg, 'danger');

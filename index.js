@@ -110,13 +110,16 @@ const LOGOUT_TIMEOUT_MS = Number(process.env.WA_LOGOUT_TIMEOUT_MS || 12000);
 
 // ✅ versão do WhatsApp Web (evita QR “inválido” por versão velha)
 const WA_WEB_VERSION = (process.env.WA_WEB_VERSION || '').trim();
-// remotePath com {version} é o formato esperado pelo RemoteWebCache :contentReference[oaicite:2]{index=2}
+// remotePath com {version} é o formato esperado pelo RemoteWebCache
 const WA_WEB_REMOTE_PATH =
   (process.env.WA_WEB_REMOTE_PATH || 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/{version}.html').trim();
 
 console.log('[BOOT] WA_WEB_VERSION:', WA_WEB_VERSION || '(auto/default)');
 console.log('[BOOT] WA_WEB_REMOTE_PATH:', WA_WEB_REMOTE_PATH);
 
+// ===========================
+// ✅ SEND QUEUE
+// ===========================
 let sendChain = Promise.resolve();
 function enqueueSend(fn) {
   sendChain = sendChain.then(fn).catch(() => {});
@@ -184,7 +187,6 @@ function buildClient() {
     takeoverTimeoutMs: 3000,
 
     // ✅ força cache remoto de versão do WhatsApp Web (mitiga QR “inválido”)
-    // docs: Client options webVersion / webVersionCache :contentReference[oaicite:3]{index=3}
     webVersionCache: {
       type: 'remote',
       remotePath: WA_WEB_REMOTE_PATH,
@@ -192,9 +194,7 @@ function buildClient() {
     },
   };
 
-  if (WA_WEB_VERSION) {
-    opts.webVersion = WA_WEB_VERSION;
-  }
+  if (WA_WEB_VERSION) opts.webVersion = WA_WEB_VERSION;
 
   return new Client(opts);
 }
@@ -422,11 +422,412 @@ function stopWatchdog() { if (watchdogTimer) clearInterval(watchdogTimer); watch
   await restartClient({ reason: 'boot_fail', wipeSession: false, doLogout: false });
 });
 
-// ===== Public config
+// ============================================================
+// ✅ CONFIG PERSISTENTE DO PLANO DE ENVIO (SEM EDITAR .env)
+// ============================================================
+const SEND_PLAN_FILE = path.join(__dirname, 'send_plan.json');
+
+function readJsonSafe(filePath) {
+  try {
+    if (!fs.existsSync(filePath)) return null;
+    const raw = fs.readFileSync(filePath, 'utf8');
+    if (!raw || !raw.trim()) return null;
+    return JSON.parse(raw);
+  } catch (e) {
+    console.log('[WARN] readJsonSafe falhou:', filePath, e?.message || e);
+    return null;
+  }
+}
+
+function writeJsonAtomic(filePath, obj) {
+  const dir = path.dirname(filePath);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+  const tmp = `${filePath}.${Date.now()}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(obj, null, 2), 'utf8');
+  fs.renameSync(tmp, filePath);
+}
+
+function parseHHMM(value, fallbackMinutes) {
+  const s = String(value || '').trim();
+  const m = s.match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return fallbackMinutes;
+  const hh = clamp(Number(m[1]), 0, 23);
+  const mm = clamp(Number(m[2]), 0, 59);
+  return hh * 60 + mm;
+}
+
+function toHHMM(mins) {
+  const m = ((Number(mins) || 0) % (24 * 60) + (24 * 60)) % (24 * 60);
+  const hh = String(Math.floor(m / 60)).padStart(2, '0');
+  const mm = String(m % 60).padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
+function sanitizePlanInput(planLike) {
+  const p = (planLike && typeof planLike === 'object') ? planLike : {};
+
+  const envStart = process.env.SEND_WINDOW_START || '08:00';
+  const envEnd = process.env.SEND_WINDOW_END || '19:00';
+
+  const startMin = parseHHMM(p.window_start ?? p.windowStart ?? p.window_start_hhmm ?? envStart, parseHHMM(envStart, 8 * 60));
+  const endMin = parseHHMM(p.window_end ?? p.windowEnd ?? p.window_end_hhmm ?? envEnd, parseHHMM(envEnd, 19 * 60));
+
+  const delayMin = clamp(Number(p.delay_min_ms ?? p.delayMinMs ?? 45000), 0, 10 * 60 * 1000);
+  const delayMax = clamp(Number(p.delay_max_ms ?? p.delayMaxMs ?? 110000), delayMin, 10 * 60 * 1000);
+
+  const longEvery = clamp(Number(p.long_break_every ?? p.longBreakEvery ?? 25), 0, 5000);
+  const longMin = clamp(Number(p.long_break_min_ms ?? p.longBreakMinMs ?? (10 * 60 * 1000)), 0, 6 * 60 * 60 * 1000);
+  const longMax = clamp(Number(p.long_break_max_ms ?? p.longBreakMaxMs ?? (20 * 60 * 1000)), longMin, 6 * 60 * 60 * 1000);
+
+  const hardStop = String(p.hard_stop_outside_window ?? p.hardStopOutsideWindow ?? 'false').toLowerCase() === 'true';
+
+  return {
+    window_start: toHHMM(startMin),
+    window_end: toHHMM(endMin),
+    delay_min_ms: delayMin,
+    delay_max_ms: delayMax,
+    long_break_every: longEvery,
+    long_break_min_ms: longMin,
+    long_break_max_ms: longMax,
+    hard_stop_outside_window: hardStop,
+  };
+}
+
+let persistedSendPlan = null;
+(function loadPersistedPlan() {
+  const fromDisk = readJsonSafe(SEND_PLAN_FILE);
+  if (fromDisk && typeof fromDisk === 'object') {
+    persistedSendPlan = sanitizePlanInput(fromDisk);
+    console.log('[BOOT] send_plan.json carregado:', persistedSendPlan);
+  } else {
+    persistedSendPlan = null;
+    console.log('[BOOT] send_plan.json não encontrado (usando env/padrões).');
+  }
+})();
+
+function getDefaultPlanObject() {
+  if (persistedSendPlan) return { ...persistedSendPlan };
+
+  return sanitizePlanInput({
+    window_start: process.env.SEND_WINDOW_START || '08:00',
+    window_end: process.env.SEND_WINDOW_END || '19:00',
+    delay_min_ms: Number(process.env.SEND_DELAY_MIN_MS || 45000),
+    delay_max_ms: Number(process.env.SEND_DELAY_MAX_MS || 110000),
+    long_break_every: Number(process.env.SEND_LONG_BREAK_EVERY || 25),
+    long_break_min_ms: Number(process.env.SEND_LONG_BREAK_MIN_MS || (10 * 60 * 1000)),
+    long_break_max_ms: Number(process.env.SEND_LONG_BREAK_MAX_MS || (20 * 60 * 1000)),
+    hard_stop_outside_window: String(process.env.SEND_HARD_STOP_OUTSIDE_WINDOW || 'false'),
+  });
+}
+
+// ===== Public config (injetando UI + botão "Salvar" no Avançado)
 app.get('/config.js', (req, res) => {
-  const wsPort = process.env.WS_PORT || 8080;
   res.setHeader('Content-Type', 'application/javascript');
-  res.send(`window.__WS_PORT__ = ${JSON.stringify(wsPort)};`);
+
+  const cfg = {
+    wsPort,
+    sendPlan: getDefaultPlanObject(),
+  };
+
+  const js = `
+/* config.js (gerado pelo servidor) */
+window.__WS_PORT__ = ${JSON.stringify(cfg.wsPort)};
+window.__SEND_PLAN_DEFAULT__ = ${JSON.stringify(cfg.sendPlan)};
+
+(function () {
+  function qs(sel) { try { return document.querySelector(sel); } catch(e) { return null; } }
+  function qsa(sel) { try { return Array.from(document.querySelectorAll(sel)); } catch(e) { return []; } }
+
+  function firstExisting(selectors) {
+    for (const s of selectors) {
+      const el = qs(s);
+      if (el) return el;
+    }
+    return null;
+  }
+
+  function makeEl(tag, attrs, html) {
+    const el = document.createElement(tag);
+    if (attrs && typeof attrs === 'object') {
+      for (const [k, v] of Object.entries(attrs)) {
+        if (k === 'class') el.className = String(v);
+        else if (k === 'style') el.setAttribute('style', String(v));
+        else el.setAttribute(k, String(v));
+      }
+    }
+    if (html !== undefined) el.innerHTML = html;
+    return el;
+  }
+
+  function toast(msg, ok) {
+    const host = firstExisting(['#toastHost', '#toast-host']) || document.body;
+    if (!host) return alert(msg);
+
+    let box = qs('#__plan_toast__');
+    if (!box) {
+      box = makeEl('div', {
+        id: '__plan_toast__',
+        style: 'position:fixed;right:16px;bottom:16px;z-index:99999;max-width:360px;'
+      });
+      host.appendChild(box);
+    }
+
+    const item = makeEl('div', {
+      style: 'margin-top:8px;padding:10px 12px;border-radius:10px;font-family:system-ui,Segoe UI,Arial;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.25);' +
+             (ok ? 'background:#0f5132;color:#d1e7dd;border:1px solid #0a3622;' : 'background:#842029;color:#f8d7da;border:1px solid #58151c;')
+    }, String(msg));
+
+    box.appendChild(item);
+    setTimeout(() => { try { item.remove(); } catch(e) {} }, 4000);
+  }
+
+  function normalizeHHMM(v) {
+    const s = String(v || '').trim();
+    const m = s.match(/^(\\d{1,2}):(\\d{2})$/);
+    if (!m) return '';
+    const hh = Math.max(0, Math.min(23, parseInt(m[1], 10)));
+    const mm = Math.max(0, Math.min(59, parseInt(m[2], 10)));
+    const H = String(hh).padStart(2, '0');
+    const M = String(mm).padStart(2, '0');
+    return H + ':' + M;
+  }
+
+  function num(v, def) {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : def;
+  }
+
+  function getAdvInputs() {
+    // tenta achar inputs existentes na sua UI; se não existir, a gente cria.
+    const map = {
+      window_start: firstExisting(['#planWindowStart', '#windowStart', 'input[name="window_start"]', 'input[data-plan="window_start"]']),
+      window_end: firstExisting(['#planWindowEnd', '#windowEnd', 'input[name="window_end"]', 'input[data-plan="window_end"]']),
+      delay_min_ms: firstExisting(['#delayMinMs', '#delay_min_ms', 'input[name="delay_min_ms"]', 'input[data-plan="delay_min_ms"]']),
+      delay_max_ms: firstExisting(['#delayMaxMs', '#delay_max_ms', 'input[name="delay_max_ms"]', 'input[data-plan="delay_max_ms"]']),
+      long_break_every: firstExisting(['#longBreakEvery', '#long_break_every', 'input[name="long_break_every"]', 'input[data-plan="long_break_every"]']),
+      long_break_min_ms: firstExisting(['#longBreakMinMs', '#long_break_min_ms', 'input[name="long_break_min_ms"]', 'input[data-plan="long_break_min_ms"]']),
+      long_break_max_ms: firstExisting(['#longBreakMaxMs', '#long_break_max_ms', 'input[name="long_break_max_ms"]', 'input[data-plan="long_break_max_ms"]']),
+      hard_stop_outside_window: firstExisting(['#hardStopOutsideWindow', '#hard_stop_outside_window', 'input[name="hard_stop_outside_window"]', 'input[data-plan="hard_stop_outside_window"]']),
+    };
+    return map;
+  }
+
+  function fillInputsFromPlan(plan) {
+    const inputs = getAdvInputs();
+    if (inputs.window_start) inputs.window_start.value = plan.window_start || '';
+    if (inputs.window_end) inputs.window_end.value = plan.window_end || '';
+    if (inputs.delay_min_ms) inputs.delay_min_ms.value = String(plan.delay_min_ms ?? '');
+    if (inputs.delay_max_ms) inputs.delay_max_ms.value = String(plan.delay_max_ms ?? '');
+    if (inputs.long_break_every) inputs.long_break_every.value = String(plan.long_break_every ?? '');
+    if (inputs.long_break_min_ms) inputs.long_break_min_ms.value = String(plan.long_break_min_ms ?? '');
+    if (inputs.long_break_max_ms) inputs.long_break_max_ms.value = String(plan.long_break_max_ms ?? '');
+    if (inputs.hard_stop_outside_window) {
+      if (inputs.hard_stop_outside_window.type === 'checkbox') inputs.hard_stop_outside_window.checked = !!plan.hard_stop_outside_window;
+      else inputs.hard_stop_outside_window.value = String(!!plan.hard_stop_outside_window);
+    }
+  }
+
+  function collectPlanFromInputs() {
+    const inputs = getAdvInputs();
+
+    const plan = {
+      window_start: normalizeHHMM(inputs.window_start ? inputs.window_start.value : (window.__SEND_PLAN_DEFAULT__?.window_start || '08:00')),
+      window_end: normalizeHHMM(inputs.window_end ? inputs.window_end.value : (window.__SEND_PLAN_DEFAULT__?.window_end || '19:00')),
+      delay_min_ms: num(inputs.delay_min_ms ? inputs.delay_min_ms.value : (window.__SEND_PLAN_DEFAULT__?.delay_min_ms ?? 45000), 45000),
+      delay_max_ms: num(inputs.delay_max_ms ? inputs.delay_max_ms.value : (window.__SEND_PLAN_DEFAULT__?.delay_max_ms ?? 110000), 110000),
+      long_break_every: num(inputs.long_break_every ? inputs.long_break_every.value : (window.__SEND_PLAN_DEFAULT__?.long_break_every ?? 25), 25),
+      long_break_min_ms: num(inputs.long_break_min_ms ? inputs.long_break_min_ms.value : (window.__SEND_PLAN_DEFAULT__?.long_break_min_ms ?? 600000), 600000),
+      long_break_max_ms: num(inputs.long_break_max_ms ? inputs.long_break_max_ms.value : (window.__SEND_PLAN_DEFAULT__?.long_break_max_ms ?? 1200000), 1200000),
+      hard_stop_outside_window: (function () {
+        const el = inputs.hard_stop_outside_window;
+        if (!el) return !!(window.__SEND_PLAN_DEFAULT__?.hard_stop_outside_window);
+        if (el.type === 'checkbox') return !!el.checked;
+        const v = String(el.value || '').toLowerCase();
+        return (v === 'true' || v === '1' || v === 'sim' || v === 'yes' || v === 'on');
+      })()
+    };
+
+    return plan;
+  }
+
+  async function apiGetPlan() {
+    try {
+      const r = await fetch('/api/send-config', { method: 'GET' });
+      const j = await r.json();
+      if (j && j.status === 'success' && j.plan) return j.plan;
+    } catch(e) {}
+    return window.__SEND_PLAN_DEFAULT__ || null;
+  }
+
+  async function apiSavePlan(plan) {
+    const r = await fetch('/api/send-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plan })
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      const msg = (j && j.message) ? j.message : ('Erro HTTP ' + r.status);
+      throw new Error(msg);
+    }
+    if (!j || j.status !== 'success') throw new Error(j?.message || 'Falha ao salvar.');
+    return j.plan;
+  }
+
+  function ensureAdvancedUI() {
+    // tenta achar o container do "Avançado"
+    const adv = firstExisting([
+      '#advanced',
+      '#advancedSettings',
+      '#advanced-settings',
+      '#advancedPanel',
+      '#advanced-panel',
+      '[data-advanced="true"]',
+      '.advanced',
+      '.avancado',
+      '#collapseAdvanced',
+      '#advancedCollapse'
+    ]);
+
+    if (!adv) return null;
+
+    // cria um bloco se não existir
+    let box = qs('#__send_plan_box__');
+    if (!box) {
+      box = makeEl('div', { id: '__send_plan_box__', style: 'margin-top:12px;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(0,0,0,.12);' });
+      adv.appendChild(box);
+    }
+
+    // título
+    if (!qs('#__send_plan_title__')) {
+      box.appendChild(makeEl('div', { id: '__send_plan_title__', style: 'font-weight:700;margin-bottom:10px;' }, 'Configuração de envio (padrão)'));
+    }
+
+    function mkRow(label, inputHtml) {
+      const row = makeEl('div', { style: 'display:flex;gap:10px;align-items:center;margin:8px 0;flex-wrap:wrap;' });
+      row.appendChild(makeEl('div', { style: 'min-width:160px;opacity:.9;' }, label));
+      const wrap = makeEl('div', { style: 'flex:1;min-width:220px;' });
+      wrap.innerHTML = inputHtml;
+      row.appendChild(wrap);
+      return row;
+    }
+
+    // cria inputs se não existir (por IDs)
+    const exists = {
+      ws: !!qs('#planWindowStart'),
+      we: !!qs('#planWindowEnd'),
+      dmin: !!qs('#delayMinMs'),
+      dmax: !!qs('#delayMaxMs'),
+      lbe: !!qs('#longBreakEvery'),
+      lbmin: !!qs('#longBreakMinMs'),
+      lbmax: !!qs('#longBreakMaxMs'),
+      hard: !!qs('#hardStopOutsideWindow'),
+      btn: !!qs('#saveSendPlanBtn'),
+    };
+
+    if (!exists.ws) box.appendChild(mkRow('Janela início (HH:MM)', '<input id="planWindowStart" class="form-control" placeholder="08:00" style="max-width:220px;">'));
+    if (!exists.we) box.appendChild(mkRow('Janela fim (HH:MM)', '<input id="planWindowEnd" class="form-control" placeholder="19:00" style="max-width:220px;">'));
+    if (!exists.dmin) box.appendChild(mkRow('Delay mínimo (ms)', '<input id="delayMinMs" class="form-control" type="number" min="0" step="1000" placeholder="45000" style="max-width:220px;">'));
+    if (!exists.dmax) box.appendChild(mkRow('Delay máximo (ms)', '<input id="delayMaxMs" class="form-control" type="number" min="0" step="1000" placeholder="110000" style="max-width:220px;">'));
+    if (!exists.lbe) box.appendChild(mkRow('Pausa longa a cada X msgs', '<input id="longBreakEvery" class="form-control" type="number" min="0" step="1" placeholder="25" style="max-width:220px;">'));
+    if (!exists.lbmin) box.appendChild(mkRow('Pausa longa mín (ms)', '<input id="longBreakMinMs" class="form-control" type="number" min="0" step="1000" placeholder="600000" style="max-width:220px;">'));
+    if (!exists.lbmax) box.appendChild(mkRow('Pausa longa máx (ms)', '<input id="longBreakMaxMs" class="form-control" type="number" min="0" step="1000" placeholder="1200000" style="max-width:220px;">'));
+    if (!exists.hard) {
+      box.appendChild(mkRow('Hard stop fora da janela', '<div style="display:flex;align-items:center;gap:8px;"><input id="hardStopOutsideWindow" type="checkbox"><label for="hardStopOutsideWindow" style="opacity:.9;">Parar ao sair da janela (não esperar até amanhã)</label></div>'));
+    }
+
+    // botão salvar
+    if (!exists.btn) {
+      const btnRow = makeEl('div', { style: 'display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap;' });
+      const btn = makeEl('button', { id: 'saveSendPlanBtn', type: 'button', class: 'btn btn-success' }, 'Salvar configuração');
+      const hint = makeEl('div', { style: 'opacity:.75;font-size:12px;' }, 'Salva no servidor (send_plan.json) e vira padrão para os próximos envios.');
+      btnRow.appendChild(btn);
+      btnRow.appendChild(hint);
+      box.appendChild(btnRow);
+    }
+
+    return adv;
+  }
+
+  async function initAdvancedPlanUI() {
+    const adv = ensureAdvancedUI();
+    if (!adv) return;
+
+    const plan = await apiGetPlan();
+    if (plan) {
+      window.__SEND_PLAN_DEFAULT__ = plan;
+      fillInputsFromPlan(plan);
+    }
+
+    const btn = qs('#saveSendPlanBtn');
+    if (!btn) return;
+
+    if (btn.__bound__) return;
+    btn.__bound__ = true;
+
+    btn.addEventListener('click', async () => {
+      try {
+        btn.disabled = true;
+        btn.innerText = 'Salvando...';
+
+        const planToSave = collectPlanFromInputs();
+        const saved = await apiSavePlan(planToSave);
+
+        window.__SEND_PLAN_DEFAULT__ = saved;
+        fillInputsFromPlan(saved);
+
+        toast('Configuração salva com sucesso!', true);
+      } catch (e) {
+        toast('Falha ao salvar: ' + (e?.message || String(e)), false);
+      } finally {
+        btn.disabled = false;
+        btn.innerText = 'Salvar configuração';
+      }
+    });
+  }
+
+  function onReady(fn) {
+    if (document.readyState === 'complete' || document.readyState === 'interactive') fn();
+    else document.addEventListener('DOMContentLoaded', fn);
+  }
+
+  onReady(() => { initAdvancedPlanUI().catch(() => {}); });
+})();`;
+
+  res.send(js);
+});
+
+// ===== API: ler/salvar config de envio
+app.get('/api/send-config', (req, res) => {
+  try {
+    return res.json({
+      status: 'success',
+      plan: getDefaultPlanObject(),
+      source: persistedSendPlan ? 'disk' : 'env',
+    });
+  } catch (e) {
+    return res.status(500).json({ status: 'error', message: 'Falha ao ler configuração.', error: e?.message || String(e) });
+  }
+});
+
+app.post('/api/send-config', (req, res) => {
+  try {
+    const body = req.body || {};
+    const planRaw = (body.plan && typeof body.plan === 'object') ? body.plan : body;
+
+    const sanitized = sanitizePlanInput(planRaw);
+
+    persistedSendPlan = { ...sanitized };
+    writeJsonAtomic(SEND_PLAN_FILE, persistedSendPlan);
+
+    broadcast({ type: 'send_plan_saved', plan: persistedSendPlan });
+    console.log('[CFG] send_plan salvo em disco:', persistedSendPlan);
+
+    return res.json({ status: 'success', message: 'Configuração salva.', plan: persistedSendPlan });
+  } catch (e) {
+    return res.status(400).json({ status: 'error', message: 'Falha ao salvar configuração.', error: e?.message || String(e) });
+  }
 });
 
 // ===== Rotas
@@ -588,36 +989,107 @@ const sendMessageWithTimeout = async (chatId, message, file, timeout = 25000) =>
   );
 };
 
-function normalizeRecipientToChatId(raw) {
+// =========================
+// ✅ BR: NORMALIZAÇÃO CORRETA + FALLBACK COM 9
+// =========================
+function onlyDigits(v) {
+  return String(v || '').replace(/\D/g, '');
+}
+
+/**
+ * Retorna E.164 "55DDxxxxxxxx" ou "55DD9xxxxxxxx" (somente dígitos),
+ * sem tentar adivinhar se é fixo/móvel.
+ */
+function formatPhoneNumberBrazil(phone) {
+  let d = onlyDigits(phone);
+
+  // remove zeros à esquerda comuns (ex: 0DD..., 00...)
+  d = d.replace(/^0+/, '');
+
+  // se veio com 55, mantém
+  if (d.startsWith('55')) return d;
+
+  // se veio com 10/11 dígitos (DD + num), prefixa 55
+  if (d.length === 10 || d.length === 11) return '55' + d;
+
+  // se veio com 8/9 dígitos sem DDD, não dá pra inferir com segurança
+  return d;
+}
+
+/**
+ * Validação “leve”: checa se parece BR com DDI 55 + DDD.
+ * NÃO decide fixo/móvel.
+ */
+function isValidBrazilianFormat(phone) {
+  const d = formatPhoneNumberBrazil(phone);
+
+  if (!d.startsWith('55')) return false;
+  if (!(d.length === 12 || d.length === 13)) return false;
+
+  const ddd = d.substring(2, 4);
+  if (ddd < '10' || ddd > '99') return false;
+
+  return true;
+}
+
+/**
+ * Resolve WID real via getNumberId com fallback:
+ * - tenta como veio
+ * - se for 12 dígitos (55 + DD + 8), tenta inserir 9 após DDD (55DD9 + 8)
+ */
+async function resolveNumberToWid(recipientRaw) {
+  const c = waState.client;
+  if (!c) throw new Error('Cliente não inicializado.');
+
+  const e164 = formatPhoneNumberBrazil(recipientRaw);
+
+  if (!isValidBrazilianFormat(e164)) {
+    throw new Error(`Número BR inválido: "${recipientRaw}" -> "${e164}"`);
+  }
+
+  const candidates = [];
+  candidates.push(e164);
+
+  if (e164.startsWith('55') && e164.length === 12) {
+    const ddd = e164.substring(2, 4);
+    const local8 = e164.substring(4); // 8 dígitos
+    const with9 = `55${ddd}9${local8}`;
+    candidates.push(with9);
+  }
+
+  let lastErr = null;
+
+  for (const cand of candidates) {
+    console.log(`[RESOLVE] raw="${recipientRaw}" -> try="${cand}"`);
+    try {
+      const numberId = await withTimeout(c.getNumberId(cand), 15000, `client.getNumberId(${cand})`);
+      if (numberId && numberId._serialized) {
+        console.log(`[RESOLVE] try="${cand}" -> wid="${numberId._serialized}"`);
+        return numberId._serialized;
+      }
+      lastErr = new Error(`Número não encontrado/registrado no WhatsApp: ${cand}`);
+      console.log(`[RESOLVE] try="${cand}" -> NOT FOUND`);
+    } catch (e) {
+      lastErr = e;
+      console.log(`[RESOLVE] try="${cand}" -> ERROR:`, e?.message || String(e));
+    }
+  }
+
+  throw new Error(lastErr?.message || `Falha ao resolver número: ${recipientRaw}`);
+}
+
+function normalizeRecipientToTarget(raw) {
   const recipientTrimmed = (raw || '').trim();
   if (!recipientTrimmed) return null;
 
-  if (/^\+?\d+$/.test(recipientTrimmed.replace(/\D/g,''))) {
-    let number = recipientTrimmed.replace(/\D/g, '');
-
-    // Removed the code that removes the 9 digit for Brazilian mobile numbers
-    // to accommodate modern 9-digit mobile plans introduced in 2016
-
-    return number + '@c.us';
+  // número
+  if (/^\+?\d+$/.test(recipientTrimmed.replace(/\D/g, ''))) {
+    const number = recipientTrimmed.replace(/\D/g, '');
+    return { type: 'number', raw: number };
   }
 
-  return { groupName: recipientTrimmed };
-}
-
-const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
-function formatPhoneNumberBrazil(phone) {
-  if (!phone) return '';
-
-  let cleanPhone = String(phone).replace(/\D/g, '');
-  if (cleanPhone.startsWith('55') && cleanPhone.length > 2) cleanPhone = cleanPhone.substring(2);
-
-  cleanPhone = '55' + cleanPhone;
-
-  // Removed the code that removes the 9 digit for Brazilian mobile numbers
-  // to accommodate modern 9-digit mobile plans introduced in 2016
-
-  return cleanPhone;
+  // grupo
+  return { type: 'group', groupName: recipientTrimmed };
 }
 
 function parseRecipientsField(recipientsField) {
@@ -639,12 +1111,140 @@ function parseRecipientsField(recipientsField) {
   return s.split(',').map(x => x.trim()).filter(Boolean);
 }
 
+// ============================================================
+// ✅ DISPATCH SCHEDULER (08:00–19:00 + random delays + breaks)
+// ============================================================
+
+function nowLocalMinutes() {
+  const d = new Date();
+  return d.getHours() * 60 + d.getMinutes();
+}
+
+function msUntilLocalMinute(targetMinute) {
+  const now = new Date();
+  const curMin = now.getHours() * 60 + now.getMinutes();
+  const curSec = now.getSeconds();
+  const curMs = now.getMilliseconds();
+
+  let diffMin = targetMinute - curMin;
+  if (diffMin < 0) diffMin += 24 * 60;
+
+  // até o início do minuto alvo (com segundos/ms zerados)
+  const msToNextMinBoundary = (60 - curSec) * 1000 - curMs;
+  const msToTarget = (diffMin === 0) ? 0 : (diffMin - 1) * 60 * 1000 + msToNextMinBoundary;
+
+  return Math.max(0, msToTarget);
+}
+
+function randInt(min, max) {
+  const a = Math.ceil(min);
+  const b = Math.floor(max);
+  if (b <= a) return a;
+  return Math.floor(Math.random() * (b - a + 1)) + a;
+}
+
+function pickDelayMs(plan) {
+  // delay curto “humano” entre mensagens
+  const minMs = Math.max(0, Number(plan.delay_min_ms || 45000));
+  const maxMs = Math.max(minMs, Number(plan.delay_max_ms || 110000));
+  return randInt(minMs, maxMs);
+}
+
+function shouldTakeLongBreak(i1based, plan) {
+  const every = Math.max(0, Number(plan.long_break_every || 25));
+  if (!every) return false;
+  return (i1based % every) === 0;
+}
+
+function pickLongBreakMs(plan) {
+  const minMs = Math.max(0, Number(plan.long_break_min_ms || 10 * 60 * 1000));
+  const maxMs = Math.max(minMs, Number(plan.long_break_max_ms || 20 * 60 * 1000));
+  return randInt(minMs, maxMs);
+}
+
+function isWithinWindow(nowMin, startMin, endMin) {
+  if (startMin === endMin) return true; // janela 24h
+  if (startMin < endMin) return nowMin >= startMin && nowMin < endMin;
+  // janela cruza meia-noite
+  return nowMin >= startMin || nowMin < endMin;
+}
+
+function normalizeSendPlanFromBody(body) {
+  const base = getDefaultPlanObject();
+  const p = (body && body.plan && typeof body.plan === 'object') ? body.plan : {};
+
+  // window: body -> base -> env/padrão
+  const startMin = parseHHMM(p.window_start || body?.window_start || base.window_start, parseHHMM(base.window_start || '08:00', 8 * 60));
+  const endMin = parseHHMM(p.window_end || body?.window_end || base.window_end, parseHHMM(base.window_end || '19:00', 19 * 60));
+
+  // random delay seconds (fallback usando seu delayInput antigo)
+  const delaySecLegacy = (body && body.delay !== undefined) ? Number(body.delay) : 1.2;
+  const legacyMs = clamp(Math.floor(delaySecLegacy * 1000), 0, 60000);
+
+  const hasCustomDelay = (p.delay_min_ms !== undefined || p.delay_max_ms !== undefined);
+
+  const delay_min_ms = hasCustomDelay
+    ? Number(p.delay_min_ms ?? base.delay_min_ms ?? 45000)
+    : (legacyMs >= 2000 ? legacyMs : Number(base.delay_min_ms ?? 45000));
+
+  const delay_max_ms = hasCustomDelay
+    ? Number(p.delay_max_ms ?? base.delay_max_ms ?? 110000)
+    : (legacyMs >= 2000 ? legacyMs : Number(base.delay_max_ms ?? 110000));
+
+  const long_break_every = Number(p.long_break_every ?? base.long_break_every ?? 25);
+  const long_break_min_ms = Number(p.long_break_min_ms ?? base.long_break_min_ms ?? (10 * 60 * 1000));
+  const long_break_max_ms = Number(p.long_break_max_ms ?? base.long_break_max_ms ?? (20 * 60 * 1000));
+
+  const hard_stop_outside_window = String(p.hard_stop_outside_window ?? base.hard_stop_outside_window ?? 'false').toLowerCase() === 'true';
+
+  return {
+    window_start_min: startMin,
+    window_end_min: endMin,
+    delay_min_ms: clamp(delay_min_ms, 0, 10 * 60 * 1000),
+    delay_max_ms: clamp(delay_max_ms, 0, 10 * 60 * 1000),
+    long_break_every: clamp(long_break_every, 0, 5000),
+    long_break_min_ms: clamp(long_break_min_ms, 0, 6 * 60 * 60 * 1000),
+    long_break_max_ms: clamp(long_break_max_ms, 0, 6 * 60 * 60 * 1000),
+    hard_stop_outside_window,
+  };
+}
+
+async function enforceWindowOrWait(plan) {
+  const startMin = plan.window_start_min;
+  const endMin = plan.window_end_min;
+  const nowMin = nowLocalMinutes();
+
+  if (isWithinWindow(nowMin, startMin, endMin)) return;
+
+  // fora da janela: esperar até próxima abertura
+  const waitMs = msUntilLocalMinute(startMin);
+  const startHH = String(Math.floor(startMin / 60)).padStart(2, '0');
+  const startMM = String(startMin % 60).padStart(2, '0');
+  const endHH = String(Math.floor(endMin / 60)).padStart(2, '0');
+  const endMM = String(endMin % 60).padStart(2, '0');
+
+  broadcast({
+    type: 'send_pause_window',
+    message: `Fora da janela (${startHH}:${startMM}–${endHH}:${endMM}). Aguardando abertura...`,
+    waitMs
+  });
+
+  console.log(`[PLAN] fora da janela ${startHH}:${startMM}–${endHH}:${endMM}. wait=${waitMs}ms`);
+  await sleep(waitMs);
+}
+
+function nowHHMM() {
+  const d = new Date();
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
 app.post('/api/send', async (req, res) => {
   const startTime = new Date();
   console.log(`[${startTime.toISOString()}] [HTTP] /api/send - Iniciando envio`);
 
   try {
-    const delaySec = (req.body && req.body.delay !== undefined) ? req.body.delay : 1.2;
     const country = (req.body && req.body.country) ? String(req.body.country) : 'BR';
 
     const messageRaw = normalizeNewlines(req.body?.message ?? '');
@@ -676,20 +1276,45 @@ app.post('/api/send', async (req, res) => {
       return res.status(400).json({ status: 'error', message: 'Nenhum destinatário válido.' });
     }
 
+    let successCount = 0;
+    let errorCount = 0;
+    const errors = [];
+
+    // ✅ BR: só normaliza, NÃO remove recipient cedo
     if (country === 'BR') {
-      for (const r of recipientList) {
-        const digits = String(r.raw || '').replace(/\D/g,'');
-        if (digits.length >= 8) {
-          const formatted = formatPhoneNumberBrazil(r.raw);
+      for (let i = 0; i < recipientList.length; i++) {
+        const r = recipientList[i];
+        const original = r.raw;
+
+        const digits = onlyDigits(original);
+        if (digits.length >= 10) {
+          const formatted = formatPhoneNumberBrazil(original);
           if (!r.vars) r.vars = {};
-          if (!r.vars.telefone) r.vars.telefone = r.raw;
+          if (!r.vars.telefone) r.vars.telefone = original;
           r.vars.telefone_formatado = formatted;
           r.raw = formatted;
+          console.log(`[FORMAT] ${original} -> ${formatted}`);
         }
       }
     }
 
-    const delayMs = Math.max(0, Math.min(Number(delaySec) * 1000, 60000));
+    // ✅ Plano de envio (agora com padrão salvo)
+    const plan = normalizeSendPlanFromBody(req.body);
+    const baseForUi = getDefaultPlanObject();
+
+    broadcast({
+      type: 'send_plan',
+      plan: {
+        window_start: req.body?.plan?.window_start || req.body?.window_start || baseForUi.window_start || process.env.SEND_WINDOW_START || '08:00',
+        window_end: req.body?.plan?.window_end || req.body?.window_end || baseForUi.window_end || process.env.SEND_WINDOW_END || '19:00',
+        delay_min_ms: plan.delay_min_ms,
+        delay_max_ms: plan.delay_max_ms,
+        long_break_every: plan.long_break_every,
+        long_break_min_ms: plan.long_break_min_ms,
+        long_break_max_ms: plan.long_break_max_ms,
+        hard_stop_outside_window: plan.hard_stop_outside_window,
+      }
+    });
 
     let chatsCache = null;
     async function getChatsCached() {
@@ -697,13 +1322,10 @@ app.post('/api/send', async (req, res) => {
       return chatsCache;
     }
 
-    let successCount = 0;
-    let errorCount = 0;
-    const errors = [];
-
     broadcast({ type: 'send_progress', total: recipientList.length, current: 0, step: 'starting' });
 
-    await enqueueSend(async () => {
+    // ✅ Enfileira (não trava a API em concorrência)
+    enqueueSend(async () => {
       broadcast({ type: 'send_progress', total: recipientList.length, current: 0, step: 'sending' });
 
       for (let i = 0; i < recipientList.length; i++) {
@@ -711,10 +1333,22 @@ app.post('/api/send', async (req, res) => {
         const recipient = entry.raw;
         const progressCurrent = i + 1;
 
+        // 1) Janela (default salvo / env / body)
+        await enforceWindowOrWait(plan);
+
+        // opcional: hard stop ao sair da janela (em vez de esperar até amanhã)
+        const nowMin = nowLocalMinutes();
+        if (plan.hard_stop_outside_window && !isWithinWindow(nowMin, plan.window_start_min, plan.window_end_min)) {
+          const msg = `Envio pausado: fora da janela em ${nowHHMM()}.`;
+          console.log('[PLAN]', msg);
+          broadcast({ type: 'send_progress', total: recipientList.length, current: i, step: 'paused', message: msg });
+          break;
+        }
+
         broadcast({ type: 'send_progress', total: recipientList.length, current: progressCurrent, recipient });
 
         try {
-          const parsed = normalizeRecipientToChatId(recipient);
+          const parsed = normalizeRecipientToTarget(recipient);
           if (!parsed) {
             errorCount++;
             errors.push({ recipient, error: 'Destinatário inválido' });
@@ -728,9 +1362,14 @@ app.post('/api/send', async (req, res) => {
 
           let finalMessage = messageRaw;
 
-          if (typeof parsed === 'string') {
+          if (parsed.type === 'number') {
             finalMessage = applyTemplateVars(finalMessage, mergedVars);
-            await sendMessageWithTimeout(parsed, finalMessage, file);
+
+            // ✅ resolve WID
+            const wid = await resolveNumberToWid(recipient);
+
+            console.log(`[SEND] number raw="${recipient}" -> wid="${wid}"`);
+            await sendMessageWithTimeout(wid, finalMessage, file);
             successCount++;
           } else {
             const chats = await getChatsCached();
@@ -746,12 +1385,36 @@ app.post('/api/send', async (req, res) => {
             }
           }
 
-          if (i < recipientList.length - 1 && delayMs > 0) await delay(delayMs);
-
         } catch (sendError) {
           const errorMsg = sendError?.message || String(sendError);
           errorCount++;
           errors.push({ recipient, error: errorMsg });
+        }
+
+        // 2) Delay humano entre envios + pausa longa por lote
+        const isLast = i >= recipientList.length - 1;
+        if (!isLast) {
+          // pausa longa a cada X mensagens (ex: 25)
+          if (shouldTakeLongBreak(progressCurrent, plan)) {
+            const longBreak = pickLongBreakMs(plan);
+            console.log(`[PLAN] long break after ${progressCurrent} msgs -> ${longBreak}ms`);
+            broadcast({
+              type: 'send_break',
+              kind: 'long',
+              after: progressCurrent,
+              waitMs: longBreak
+            });
+            await sleep(longBreak);
+          } else {
+            const dms = pickDelayMs(plan);
+            broadcast({
+              type: 'send_break',
+              kind: 'short',
+              after: progressCurrent,
+              waitMs: dms
+            });
+            await sleep(dms);
+          }
         }
       }
 
@@ -765,13 +1428,15 @@ app.post('/api/send', async (req, res) => {
       });
     });
 
+    // ✅ responde imediatamente (o envio continua na fila)
     const endTime = new Date();
     const duration = endTime - startTime;
 
     return res.status(200).json({
       status: 'success',
-      message: `Mensagens enviadas! Sucesso: ${successCount}, Erros: ${errorCount}`,
+      message: `Envio enfileirado! Sucesso (até agora): ${successCount}, Erros (até agora): ${errorCount}`,
       stats: { success: successCount, errors: errorCount, duration },
+      plan,
       errors: errors.slice(0, 10)
     });
 
@@ -797,17 +1462,21 @@ app.get('/api/sendMessage/:recipient/:message', async (req, res) => {
 
     if (!recipientParam) return res.status(400).json({ status: 'error', message: 'recipient obrigatório' });
 
-    let chatIdOrGroup = normalizeRecipientToChatId(recipientParam);
-    if (!chatIdOrGroup) return res.status(400).json({ status: 'error', message: 'recipient inválido' });
+    let target = normalizeRecipientToTarget(recipientParam);
+    if (!target) return res.status(400).json({ status: 'error', message: 'recipient inválido' });
 
-    if (typeof chatIdOrGroup !== 'string') {
+    let chatId = null;
+
+    if (target.type === 'number') {
+      chatId = await resolveNumberToWid(recipientParam);
+    } else {
       const chats = await waState.client.getChats();
-      const group = chats.find(chat => chat.isGroup && chat.name === chatIdOrGroup.groupName);
-      if (!group) return res.status(404).json({ status: 'error', message: `Grupo "${chatIdOrGroup.groupName}" não encontrado.` });
-      chatIdOrGroup = group.id._serialized;
+      const group = chats.find(chat => chat.isGroup && chat.name === target.groupName);
+      if (!group) return res.status(404).json({ status: 'error', message: `Grupo "${target.groupName}" não encontrado.` });
+      chatId = group.id._serialized;
     }
 
-    await enqueueSend(async () => { await sendMessageWithTimeout(chatIdOrGroup, message, null); });
+    await enqueueSend(async () => { await sendMessageWithTimeout(chatId, message, null); });
 
     return res.status(200).json({ status: 'success', message: 'Mensagem enfileirada/enviada!' });
   } catch (err) {
