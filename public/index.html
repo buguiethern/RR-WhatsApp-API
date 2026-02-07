@@ -67,9 +67,17 @@
     .recipient-tag .remove-tag { background:none; border:none; color:#000; margin-left:6px; cursor:pointer; font-size:16px; font-weight:bold; line-height:1; }
     .recipient-tag .remove-tag:hover { color:#660000; }
 
-    .progress-bar-container { width:100%; height:30px; background:#1a1a1a; border:1px solid #00ff88; border-radius:0; overflow:hidden; margin:10px 0; display:none; }
-    .progress-bar-fill { height:100%; background:linear-gradient(90deg,#00ff88,#00cc66); width:0%; transition:width .3s ease; position:relative; }
-    .progress-bar-text { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); color:#000; font-weight:bold; font-size:14px; text-transform:uppercase; letter-spacing:1px; white-space:nowrap; }
+    .progress-bar-container { width:100%; height:34px; background:#1a1a1a; border:1px solid #00ff88; border-radius:0; overflow:hidden; margin:10px 0 6px 0; display:none; }
+    .progress-bar-fill { height:100%; background:linear-gradient(90deg,#00ff88,#00cc66); width:0%; transition:width .15s ease; position:relative; }
+    .progress-bar-text { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); color:#000; font-weight:bold; font-size:13px; text-transform:uppercase; letter-spacing:1px; white-space:nowrap; }
+
+    .send-controls { display:none; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:8px; }
+    .send-controls .mini { border:1px solid #00ff88; color:#00ff88; background:transparent; padding:8px 10px; border-radius:0; text-transform:uppercase; letter-spacing:1px; font-weight:bold; }
+    .send-controls .mini:hover { background:#00ff88; color:#000; }
+    .send-controls .mini-danger { border:1px solid #ff0040; color:#ff0040; }
+    .send-controls .mini-danger:hover { background:#ff0040; color:#fff; }
+    .send-controls .stat { color:#00ff88; font-size:12px; letter-spacing:1px; text-transform:uppercase; opacity:.9; }
+    .send-controls .stat strong { color:#00ff88; font-size:13px; }
 
     .modal-content { background:#111; border:1px solid #00ff88; color:#00ff88; border-radius:0; }
     .modal-header { border-bottom:1px solid #00ff88; }
@@ -229,7 +237,6 @@
                 <pre id="previewAdvanced">(adicione destinatários)</pre>
               </div>
 
-              <!-- ✅ BOTÃO SALVAR CONFIG -->
               <div class="mt-3" style="display:flex; gap:10px; flex-wrap:wrap;">
                 <button type="button" class="btn btn-success" id="btnSavePlan" style="flex:1; min-width:220px;">SALVAR CONFIGURAÇÃO</button>
                 <button type="button" class="btn btn-outline-secondary" id="btnLoadPlan" style="flex:1; min-width:220px;">CARREGAR CONFIGURAÇÃO</button>
@@ -242,6 +249,19 @@
 
           <input type="hidden" id="planInput" name="plan" value="">
           <input type="hidden" id="delayInput" name="delay" value="1.2">
+
+          <div class="send-controls" id="sendControls">
+            <button type="button" class="mini" id="btnPauseSend">PAUSAR</button>
+            <button type="button" class="mini" id="btnResumeSend" style="display:none;">RETOMAR</button>
+            <button type="button" class="mini mini-danger" id="btnCancelSend">CANCELAR</button>
+
+            <div class="stat">
+              ENVIADAS: <strong id="statSent">0</strong> /
+              TOTAL: <strong id="statTotal">0</strong> •
+              FALHAS: <strong id="statFail">0</strong> •
+              STATUS: <strong id="statState">-</strong>
+            </div>
+          </div>
 
           <div class="progress-bar-container" id="progressContainer">
             <div class="progress-bar-fill" id="progressBar">
@@ -316,6 +336,10 @@
   let attachedFiles = [];
   let recipients = [];
 
+  // status do job atual no front
+  let currentJobId = null;
+  let currentJobState = 'IDLE';
+
   function escapeHtml(str) {
     return String(str ?? '')
       .replaceAll('&', '&amp;')
@@ -338,9 +362,7 @@
     messageModal.show();
   }
 
-  // ===========
-  // TEXT/VARS
-  // ===========
+  // =========== TEXT/VARS ===========
   function normalizeNewlines(s) {
     let t = String(s ?? '');
     t = t.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
@@ -445,9 +467,7 @@
     });
   }
 
-  // ===========
-  // ADVANCED UI + SAVE/LOAD
-  // ===========
+  // =========== ADVANCED UI + SAVE/LOAD ===========
   const PLAN_STORAGE_KEY = 'WA_SEND_PLAN_V1';
 
   function toggleAdvanced() {
@@ -481,12 +501,6 @@
     const mo = String(d.getMonth() + 1).padStart(2, '0');
     const yyyy = d.getFullYear();
     return `${dd}/${mo}/${yyyy} ${fmtHHMM(d)}`;
-  }
-
-  function addMinutes(date, minutes) {
-    const d = new Date(date.getTime());
-    d.setMinutes(d.getMinutes() + minutes);
-    return d;
   }
 
   function isWithinWindow(minNow, minStart, minEnd) {
@@ -663,10 +677,7 @@
     refreshSimulation();
   }
 
-  function savePlanLocal(plan) {
-    localStorage.setItem(PLAN_STORAGE_KEY, JSON.stringify(plan));
-  }
-
+  function savePlanLocal(plan) { localStorage.setItem(PLAN_STORAGE_KEY, JSON.stringify(plan)); }
   function loadPlanLocal() {
     const raw = localStorage.getItem(PLAN_STORAGE_KEY);
     if (!raw) return null;
@@ -674,7 +685,6 @@
   }
 
   async function trySavePlanBackend(plan) {
-    // opcional: se existir endpoint, ele salva em arquivo no servidor
     try {
       const resp = await fetch('/api/plan', {
         method: 'POST',
@@ -692,7 +702,6 @@
   }
 
   async function tryLoadPlanBackend() {
-    // opcional: se existir endpoint, ele carrega do servidor
     try {
       const resp = await fetch('/api/plan', { cache: 'no-store' });
       if (!resp.ok) return null;
@@ -704,11 +713,7 @@
 
   async function onSavePlanClick() {
     const plan = buildPlanPayload();
-
-    // salva no browser
     savePlanLocal(plan);
-
-    // tenta salvar no backend, se existir
     const okServer = await trySavePlanBackend(plan);
 
     showMessageModal(
@@ -723,7 +728,6 @@
   }
 
   async function onLoadPlanClick() {
-    // tenta primeiro do servidor
     const serverPlan = await tryLoadPlanBackend();
     if (serverPlan && typeof serverPlan === 'object') {
       applyPlanToInputs(serverPlan);
@@ -732,7 +736,6 @@
       return;
     }
 
-    // fallback local
     const localPlan = loadPlanLocal();
     if (localPlan) {
       applyPlanToInputs(localPlan);
@@ -760,9 +763,7 @@
     showMessageModal('CONFIGURAÇÃO', 'RESETADO PARA O PADRÃO.', 'success');
   }
 
-  // ===========
-  // SIMULAÇÃO
-  // ===========
+  // =========== SIMULAÇÃO ===========
   function refreshPreviewKpis() {
     const msg = getEditorPlainTextPreserveLines();
     const first = recipients[0] || null;
@@ -862,9 +863,7 @@
     });
   }
 
-  // ===========
-  // STATUS/QR (mantido)
-  // ===========
+  // =========== STATUS/QR ===========
   async function loadStatus() {
     try {
       const r = await fetch('/api/status', { cache: 'no-store' });
@@ -993,6 +992,55 @@
     }
   }
 
+  // =========== SEND CONTROLS (PAUSE/RESUME/CANCEL) ===========
+  function setSendControlsVisible(visible) {
+    const box = document.getElementById('sendControls');
+    box.style.display = visible ? 'flex' : 'none';
+  }
+
+  function setSendStateUI(state) {
+    currentJobState = state || 'IDLE';
+    document.getElementById('statState').textContent = currentJobState;
+
+    const btnPause = document.getElementById('btnPauseSend');
+    const btnResume = document.getElementById('btnResumeSend');
+
+    if (currentJobState === 'PAUSED' || currentJobState === 'WAIT_WINDOW') {
+      btnPause.style.display = 'none';
+      btnResume.style.display = 'inline-block';
+    } else if (currentJobState === 'RUNNING') {
+      btnPause.style.display = 'inline-block';
+      btnResume.style.display = 'none';
+    } else {
+      btnPause.style.display = 'inline-block';
+      btnResume.style.display = 'none';
+    }
+  }
+
+  function setSendStats(sent, total, fail) {
+    document.getElementById('statSent').textContent = String(sent ?? 0);
+    document.getElementById('statTotal').textContent = String(total ?? 0);
+    document.getElementById('statFail').textContent = String(fail ?? 0);
+  }
+
+  async function sendControl(action) {
+    try {
+      const r = await fetch('/api/send-control', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, jobId: currentJobId })
+      });
+      const j = await r.json().catch(() => null);
+      if (!r.ok || !j || j.status !== 'success') {
+        showMessageModal('ERRO', (j && (j.message || j.error)) ? (j.message || j.error) : 'FALHA AO CONTROLAR ENVIO.', 'danger');
+        return;
+      }
+    } catch (e) {
+      showMessageModal('ERRO', 'FALHA AO CONTROLAR ENVIO.', 'danger');
+    }
+  }
+
+  // =========== WEBSOCKET ===========
   function connectWebSocket() {
     try {
       const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -1033,32 +1081,96 @@
           if (data.state) stateHint.textContent = `ESTADO: ${data.state}`;
         }
 
-        if (data.type === 'send_pause_window') {
-          showProgress();
-          updateProgress(0, 1, data.message || 'FORA DA JANELA...');
-        }
+        // ======= JOB EVENTS (real-time) =======
+        if (data.type === 'send_job') {
+          currentJobId = data.jobId || null;
 
-        if (data.type === 'send_break') {
-          const kind = data.kind === 'long' ? 'PAUSA LONGA' : 'PAUSA';
-          const sec = Math.round((data.waitMs || 0) / 1000);
-          updateProgress(parseInt((document.getElementById('progressText').dataset.cur || '0'), 10), 1, `${kind}: ${sec}s`);
-        }
-
-        if (data.type === 'send_progress') {
-          if (data.step === 'starting') {
+          if (data.event === 'queued') {
+            setSendControlsVisible(true);
+            setSendStateUI('QUEUED');
+            setSendStats(0, data.total || 0, 0);
             showProgress();
-            updateProgress(0, data.total, 'INICIANDO...');
-          } else if (data.step === 'sending') {
-            updateProgress(data.current, data.total, `${data.recipient || ''}`);
-          } else if (data.step === 'paused') {
+            updateProgress(0, data.total || 1, 'ENFILEIRADO...');
+          }
+
+          if (data.event === 'started') {
+            setSendControlsVisible(true);
+            setSendStateUI('RUNNING');
+            setSendStats(data.success || 0, data.total || 0, data.failed || 0);
+            showProgress();
+            updateProgress(data.current || 0, data.total || 1, 'INICIANDO...');
+          }
+
+          if (data.event === 'paused') {
+            setSendControlsVisible(true);
+            setSendStateUI('PAUSED');
+            setSendStats(data.success || 0, data.total || 0, data.failed || 0);
+            showProgress();
             updateProgress(data.current || 0, data.total || 1, data.message || 'PAUSADO');
-          } else if (data.step === 'completed') {
-            updateProgress(data.total, data.total, `${data.success}/${data.total} - CONCLUÍDO!`);
+          }
+
+          if (data.event === 'resumed') {
+            setSendControlsVisible(true);
+            setSendStateUI('RUNNING');
+            setSendStats(data.success || 0, data.total || 0, data.failed || 0);
+          }
+
+          if (data.event === 'wait_window') {
+            setSendControlsVisible(true);
+            setSendStateUI('WAIT_WINDOW');
+            setSendStats(data.success || 0, data.total || 0, data.failed || 0);
+            showProgress();
+            updateProgress(data.current || 0, data.total || 1, data.message || 'FORA DA JANELA...');
+          }
+
+          if (data.event === 'tick') {
+            setSendControlsVisible(true);
+            setSendStateUI(data.state || 'RUNNING');
+            setSendStats(data.success || 0, data.total || 0, data.failed || 0);
+            showProgress();
+
+            const label = data.label || data.recipient || data.message || '';
+            const text = label ? `${data.current || 0}/${data.total || 0} • ${label}` : `${data.current || 0}/${data.total || 0}`;
+            updateProgress(data.current || 0, data.total || 1, text);
+          }
+
+          if (data.event === 'completed') {
+            setSendControlsVisible(false);
+            setSendStateUI('DONE');
+            setSendStats(data.success || 0, data.total || 0, data.failed || 0);
+            showProgress();
+            updateProgress(data.total || 1, data.total || 1, `${data.success || 0}/${data.total || 0} • CONCLUÍDO`);
             setTimeout(() => {
               const submitButton = document.getElementById('btnSend');
               submitButton.disabled = false;
               submitButton.textContent = '> ENVIAR MENSAGEM';
-            }, 1000);
+            }, 800);
+          }
+
+          if (data.event === 'canceled') {
+            setSendControlsVisible(false);
+            setSendStateUI('CANCELED');
+            setSendStats(data.success || 0, data.total || 0, data.failed || 0);
+            showProgress();
+            updateProgress(data.current || 0, data.total || 1, 'CANCELADO');
+            setTimeout(() => {
+              const submitButton = document.getElementById('btnSend');
+              submitButton.disabled = false;
+              submitButton.textContent = '> ENVIAR MENSAGEM';
+            }, 800);
+          }
+
+          if (data.event === 'error') {
+            setSendControlsVisible(false);
+            setSendStateUI('ERROR');
+            setSendStats(data.success || 0, data.total || 0, data.failed || 0);
+            showProgress();
+            updateProgress(data.current || 0, data.total || 1, data.message || 'ERRO');
+            setTimeout(() => {
+              const submitButton = document.getElementById('btnSend');
+              submitButton.disabled = false;
+              submitButton.textContent = '> ENVIAR MENSAGEM';
+            }, 800);
           }
         }
       };
@@ -1068,9 +1180,7 @@
     }
   }
 
-  // ===========
-  // FILES (mantido)
-  // ===========
+  // =========== FILES ===========
   function initDragDrop() {
     const editor = document.getElementById('messageEditor');
     const previewContainer = document.getElementById('filePreview');
@@ -1165,9 +1275,7 @@
     }
   }
 
-  // ===========
-  // RECIPIENTS (mantido)
-  // ===========
+  // =========== RECIPIENTS ===========
   function updateRecipientsHidden() {
     const hiddenInput = document.getElementById('recipients');
     hiddenInput.value = JSON.stringify(recipients);
@@ -1342,9 +1450,7 @@
     setTimeout(() => fileInput.remove(), 2000);
   }
 
-  // ===========
-  // PROGRESS
-  // ===========
+  // =========== PROGRESS ===========
   function showProgress() { document.getElementById('progressContainer').style.display = 'block'; }
   function hideProgress() { document.getElementById('progressContainer').style.display = 'none'; }
 
@@ -1361,11 +1467,8 @@
     if (current >= total) setTimeout(() => hideProgress(), 2000);
   }
 
-  // ===========
-  // SUBMIT
-  // ===========
+  // =========== SUBMIT ===========
   document.addEventListener('DOMContentLoaded', async () => {
-    // carrega automaticamente a config salva (servidor -> local)
     try {
       const serverPlan = await tryLoadPlanBackend();
       if (serverPlan && typeof serverPlan === 'object') {
@@ -1409,10 +1512,16 @@
 
     bindSimulationInputs();
 
-    // ✅ binds do botão salvar/carregar/resetar (avançado)
     document.getElementById('btnSavePlan').addEventListener('click', (e) => { e.preventDefault(); onSavePlanClick(); });
     document.getElementById('btnLoadPlan').addEventListener('click', (e) => { e.preventDefault(); onLoadPlanClick(); });
     document.getElementById('btnResetPlan').addEventListener('click', (e) => { e.preventDefault(); onResetPlanClick(); });
+
+    document.getElementById('btnPauseSend').addEventListener('click', async (e) => { e.preventDefault(); await sendControl('pause'); });
+    document.getElementById('btnResumeSend').addEventListener('click', async (e) => { e.preventDefault(); await sendControl('resume'); });
+    document.getElementById('btnCancelSend').addEventListener('click', async (e) => {
+      e.preventDefault();
+      await sendControl('cancel');
+    });
 
     refreshPreviewKpis();
 
@@ -1433,7 +1542,6 @@
         return;
       }
 
-      // ✅ injeta o plan no form
       const plan = buildPlanPayload();
       document.getElementById('planInput').value = JSON.stringify(plan);
 
@@ -1446,16 +1554,23 @@
       const original = submitButton.textContent;
       submitButton.textContent = 'ENVIANDO...';
 
+      // prepara UI de progresso (vai ser atualizada pelo WS)
+      setSendControlsVisible(true);
+      setSendStateUI('QUEUED');
+      setSendStats(0, recipients.length, 0);
+      showProgress();
+      updateProgress(0, recipients.length, 'ENFILEIRANDO...');
+
       try {
         const resp = await fetch('/api/send', { method: 'POST', body: formData });
         const data = await resp.json().catch(() => null);
 
-        submitButton.disabled = false;
-        submitButton.textContent = original;
-
         if (data && data.status === 'success') {
+          currentJobId = data.jobId || null;
+
           showMessageModal('SUCESSO', data.message || 'ENVIO ENFILEIRADO!', 'success');
 
+          // limpa UI do form (sem mexer no job)
           this.reset();
           document.getElementById('messageEditor').innerText = '';
           document.getElementById('filePreview').innerHTML = '';
@@ -1468,13 +1583,20 @@
         } else {
           const emsg = (data && (data.message || data.error)) ? (data.message || data.error) : 'FALHA AO ENVIAR.';
           showMessageModal('ERRO', 'ERRO AO ENVIAR MENSAGEM: ' + emsg, 'danger');
-          console.error('Resposta:', data);
+
+          submitButton.disabled = false;
+          submitButton.textContent = original;
+          setSendControlsVisible(false);
+          hideProgress();
         }
       } catch (err) {
-        submitButton.disabled = false;
-        submitButton.textContent = original;
         console.error('Erro ao enviar:', err);
         showMessageModal('ERRO', 'ERRO AO ENVIAR MENSAGEM.', 'danger');
+
+        submitButton.disabled = false;
+        submitButton.textContent = original;
+        setSendControlsVisible(false);
+        hideProgress();
       }
     });
   });

@@ -47,7 +47,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.json({ limit: '25mb' }));
 app.use(express.static('public'));
 
-// ✅ importante: pra multipart + texto vir em req.body
+// importante: pra multipart + texto vir em req.body
 app.use(fileUpload({ createParentPath: true, limits: { fileSize: 25 * 1024 * 1024 } }));
 
 // ===== WebSocket
@@ -81,6 +81,12 @@ wss.on('connection', function connection(ws, req) {
 
   if (waState.qrCodeData) ws.send(JSON.stringify({ type: 'qr', data: waState.qrCodeData }));
   else ws.send(JSON.stringify({ type: 'status', authenticated: waState.authenticated, state: waState.lastKnownState }));
+
+  // envia snapshot do job atual + fila (se existir)
+  try {
+    const snap = getSendSnapshot();
+    ws.send(JSON.stringify({ type: 'send_job', event: 'snapshot', ...snap }));
+  } catch {}
 });
 
 // ===== WhatsApp state
@@ -108,26 +114,21 @@ const STATE_STUCK_TIMEOUT_MS = Number(process.env.WA_STUCK_TIMEOUT_MS || 90000);
 const DESTROY_TIMEOUT_MS = Number(process.env.WA_DESTROY_TIMEOUT_MS || 12000);
 const LOGOUT_TIMEOUT_MS = Number(process.env.WA_LOGOUT_TIMEOUT_MS || 12000);
 
-// ✅ versão do WhatsApp Web (evita QR “inválido” por versão velha)
+// ACK / entrega
+const WA_ACK_TIMEOUT_MS = Number(process.env.WA_ACK_TIMEOUT_MS || 15000); // 15s
+const WA_ACK_MIN_LEVEL = Number(process.env.WA_ACK_MIN_LEVEL || 1); // 1 = server received
+
+// versão do WhatsApp Web
 const WA_WEB_VERSION = (process.env.WA_WEB_VERSION || '').trim();
-// remotePath com {version} é o formato esperado pelo RemoteWebCache
 const WA_WEB_REMOTE_PATH =
   (process.env.WA_WEB_REMOTE_PATH || 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/{version}.html').trim();
 
 console.log('[BOOT] WA_WEB_VERSION:', WA_WEB_VERSION || '(auto/default)');
 console.log('[BOOT] WA_WEB_REMOTE_PATH:', WA_WEB_REMOTE_PATH);
 
-// ===========================
-// ✅ SEND QUEUE
-// ===========================
-let sendChain = Promise.resolve();
-function enqueueSend(fn) {
-  sendChain = sendChain.then(fn).catch(() => {});
-  return sendChain;
-}
-
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 function clamp(n, min, max) { return Math.max(min, Math.min(max, n)); }
+
 function backoffDelay(attempt) {
   const base = RESTART_BASE_DELAY_MS;
   const exp = base * Math.pow(2, attempt);
@@ -180,13 +181,11 @@ function buildClient() {
     authStrategy: new LocalAuth({ dataPath: SESSION_DIR }),
     puppeteer: getPuppeteerOptions(),
 
-    // ✅ aumenta tolerância de regeneração de QR
     qrMaxRetries: Number(process.env.WA_QR_MAX_RETRIES || 10),
 
     takeoverOnConflict: true,
     takeoverTimeoutMs: 3000,
 
-    // ✅ força cache remoto de versão do WhatsApp Web (mitiga QR “inválido”)
     webVersionCache: {
       type: 'remote',
       remotePath: WA_WEB_REMOTE_PATH,
@@ -195,7 +194,6 @@ function buildClient() {
   };
 
   if (WA_WEB_VERSION) opts.webVersion = WA_WEB_VERSION;
-
   return new Client(opts);
 }
 
@@ -205,6 +203,59 @@ function setState(nextState) {
 }
 
 function clearQr() { waState.qrCodeData = null; }
+
+// ====== ACK tracking
+// Map: messageIdSerialized -> { minLevel, resolve, reject, timer, lastAck }
+const ackWaiters = new Map();
+
+function ackKeyFromMessage(msg) {
+  const id = msg?.id;
+  const key = id?._serialized || id?.serialized || null;
+  return key || null;
+}
+
+function waitForAck(messageIdSerialized, minLevel, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    if (!messageIdSerialized) return reject(new Error('ACK: message id inválido'));
+
+    // se já existe waiter, cancela o anterior
+    const existing = ackWaiters.get(messageIdSerialized);
+    if (existing) {
+      try { clearTimeout(existing.timer); } catch {}
+      ackWaiters.delete(messageIdSerialized);
+    }
+
+    const timer = setTimeout(() => {
+      ackWaiters.delete(messageIdSerialized);
+      reject(new Error(`SEM ACK (${timeoutMs}ms)`));
+    }, Math.max(1000, Number(timeoutMs || 0)));
+
+    ackWaiters.set(messageIdSerialized, {
+      minLevel: Number.isFinite(minLevel) ? minLevel : 1,
+      resolve,
+      reject,
+      timer,
+      lastAck: 0,
+    });
+  });
+}
+
+function handleAckEvent(msg, ack) {
+  const key = ackKeyFromMessage(msg);
+  if (!key) return;
+
+  const waiter = ackWaiters.get(key);
+  if (!waiter) return;
+
+  const level = Number(ack || 0);
+  waiter.lastAck = level;
+
+  if (level >= waiter.minLevel) {
+    try { clearTimeout(waiter.timer); } catch {}
+    ackWaiters.delete(key);
+    waiter.resolve(level);
+  }
+}
 
 async function stopClient({ doLogout = false, wipeSession = false, reason = 'stop' } = {}) {
   if (waState.isStopping) return;
@@ -217,6 +268,15 @@ async function stopClient({ doLogout = false, wipeSession = false, reason = 'sto
     clearQr();
     setState('STOPPING');
     broadcast({ type: 'stopping', reason, wipeSession });
+
+    // limpa ack waiters
+    try {
+      for (const [k, w] of ackWaiters.entries()) {
+        try { clearTimeout(w.timer); } catch {}
+        try { w.reject(new Error('Client parou')); } catch {}
+        ackWaiters.delete(k);
+      }
+    } catch {}
 
     if (c) {
       try { c.removeAllListeners(); } catch {}
@@ -354,6 +414,14 @@ function registerClientEvents(client) {
     await restartClient({ reason: `disconnected:${reason}`, wipeSession: shouldWipe, doLogout: false });
   });
 
+  // OUTGOING ACK (CONFIRMAÇÃO DE ENVIO)
+  client.on('message_ack', (msg, ack) => {
+    try {
+      // ack: 0..3 (depende da lib/versão)
+      handleAckEvent(msg, ack);
+    } catch {}
+  });
+
   client.on('message', async (msg) => {
     try {
       if (msg.type === 'chat' && (msg.body || '').toLowerCase().trim() === '!ping') {
@@ -423,7 +491,7 @@ function stopWatchdog() { if (watchdogTimer) clearInterval(watchdogTimer); watch
 });
 
 // ============================================================
-// ✅ CONFIG PERSISTENTE DO PLANO DE ENVIO (SEM EDITAR .env)
+// CONFIG PERSISTENTE DO PLANO DE ENVIO (send_plan.json)
 // ============================================================
 const SEND_PLAN_FILE = path.join(__dirname, 'send_plan.json');
 
@@ -521,316 +589,765 @@ function getDefaultPlanObject() {
   });
 }
 
-// ===== Public config (injetando UI + botão "Salvar" no Avançado)
+// ===== Public config.js
 app.get('/config.js', (req, res) => {
   res.setHeader('Content-Type', 'application/javascript');
-
-  const cfg = {
-    wsPort,
-    sendPlan: getDefaultPlanObject(),
-  };
-
-  const js = `
+  const cfg = { wsPort, sendPlan: getDefaultPlanObject() };
+  res.send(`
 /* config.js (gerado pelo servidor) */
 window.__WS_PORT__ = ${JSON.stringify(cfg.wsPort)};
 window.__SEND_PLAN_DEFAULT__ = ${JSON.stringify(cfg.sendPlan)};
-
-(function () {
-  function qs(sel) { try { return document.querySelector(sel); } catch(e) { return null; } }
-  function qsa(sel) { try { return Array.from(document.querySelectorAll(sel)); } catch(e) { return []; } }
-
-  function firstExisting(selectors) {
-    for (const s of selectors) {
-      const el = qs(s);
-      if (el) return el;
-    }
-    return null;
-  }
-
-  function makeEl(tag, attrs, html) {
-    const el = document.createElement(tag);
-    if (attrs && typeof attrs === 'object') {
-      for (const [k, v] of Object.entries(attrs)) {
-        if (k === 'class') el.className = String(v);
-        else if (k === 'style') el.setAttribute('style', String(v));
-        else el.setAttribute(k, String(v));
-      }
-    }
-    if (html !== undefined) el.innerHTML = html;
-    return el;
-  }
-
-  function toast(msg, ok) {
-    const host = firstExisting(['#toastHost', '#toast-host']) || document.body;
-    if (!host) return alert(msg);
-
-    let box = qs('#__plan_toast__');
-    if (!box) {
-      box = makeEl('div', {
-        id: '__plan_toast__',
-        style: 'position:fixed;right:16px;bottom:16px;z-index:99999;max-width:360px;'
-      });
-      host.appendChild(box);
-    }
-
-    const item = makeEl('div', {
-      style: 'margin-top:8px;padding:10px 12px;border-radius:10px;font-family:system-ui,Segoe UI,Arial;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.25);' +
-             (ok ? 'background:#0f5132;color:#d1e7dd;border:1px solid #0a3622;' : 'background:#842029;color:#f8d7da;border:1px solid #58151c;')
-    }, String(msg));
-
-    box.appendChild(item);
-    setTimeout(() => { try { item.remove(); } catch(e) {} }, 4000);
-  }
-
-  function normalizeHHMM(v) {
-    const s = String(v || '').trim();
-    const m = s.match(/^(\\d{1,2}):(\\d{2})$/);
-    if (!m) return '';
-    const hh = Math.max(0, Math.min(23, parseInt(m[1], 10)));
-    const mm = Math.max(0, Math.min(59, parseInt(m[2], 10)));
-    const H = String(hh).padStart(2, '0');
-    const M = String(mm).padStart(2, '0');
-    return H + ':' + M;
-  }
-
-  function num(v, def) {
-    const n = Number(v);
-    return Number.isFinite(n) ? n : def;
-  }
-
-  function getAdvInputs() {
-    // tenta achar inputs existentes na sua UI; se não existir, a gente cria.
-    const map = {
-      window_start: firstExisting(['#planWindowStart', '#windowStart', 'input[name="window_start"]', 'input[data-plan="window_start"]']),
-      window_end: firstExisting(['#planWindowEnd', '#windowEnd', 'input[name="window_end"]', 'input[data-plan="window_end"]']),
-      delay_min_ms: firstExisting(['#delayMinMs', '#delay_min_ms', 'input[name="delay_min_ms"]', 'input[data-plan="delay_min_ms"]']),
-      delay_max_ms: firstExisting(['#delayMaxMs', '#delay_max_ms', 'input[name="delay_max_ms"]', 'input[data-plan="delay_max_ms"]']),
-      long_break_every: firstExisting(['#longBreakEvery', '#long_break_every', 'input[name="long_break_every"]', 'input[data-plan="long_break_every"]']),
-      long_break_min_ms: firstExisting(['#longBreakMinMs', '#long_break_min_ms', 'input[name="long_break_min_ms"]', 'input[data-plan="long_break_min_ms"]']),
-      long_break_max_ms: firstExisting(['#longBreakMaxMs', '#long_break_max_ms', 'input[name="long_break_max_ms"]', 'input[data-plan="long_break_max_ms"]']),
-      hard_stop_outside_window: firstExisting(['#hardStopOutsideWindow', '#hard_stop_outside_window', 'input[name="hard_stop_outside_window"]', 'input[data-plan="hard_stop_outside_window"]']),
-    };
-    return map;
-  }
-
-  function fillInputsFromPlan(plan) {
-    const inputs = getAdvInputs();
-    if (inputs.window_start) inputs.window_start.value = plan.window_start || '';
-    if (inputs.window_end) inputs.window_end.value = plan.window_end || '';
-    if (inputs.delay_min_ms) inputs.delay_min_ms.value = String(plan.delay_min_ms ?? '');
-    if (inputs.delay_max_ms) inputs.delay_max_ms.value = String(plan.delay_max_ms ?? '');
-    if (inputs.long_break_every) inputs.long_break_every.value = String(plan.long_break_every ?? '');
-    if (inputs.long_break_min_ms) inputs.long_break_min_ms.value = String(plan.long_break_min_ms ?? '');
-    if (inputs.long_break_max_ms) inputs.long_break_max_ms.value = String(plan.long_break_max_ms ?? '');
-    if (inputs.hard_stop_outside_window) {
-      if (inputs.hard_stop_outside_window.type === 'checkbox') inputs.hard_stop_outside_window.checked = !!plan.hard_stop_outside_window;
-      else inputs.hard_stop_outside_window.value = String(!!plan.hard_stop_outside_window);
-    }
-  }
-
-  function collectPlanFromInputs() {
-    const inputs = getAdvInputs();
-
-    const plan = {
-      window_start: normalizeHHMM(inputs.window_start ? inputs.window_start.value : (window.__SEND_PLAN_DEFAULT__?.window_start || '08:00')),
-      window_end: normalizeHHMM(inputs.window_end ? inputs.window_end.value : (window.__SEND_PLAN_DEFAULT__?.window_end || '19:00')),
-      delay_min_ms: num(inputs.delay_min_ms ? inputs.delay_min_ms.value : (window.__SEND_PLAN_DEFAULT__?.delay_min_ms ?? 45000), 45000),
-      delay_max_ms: num(inputs.delay_max_ms ? inputs.delay_max_ms.value : (window.__SEND_PLAN_DEFAULT__?.delay_max_ms ?? 110000), 110000),
-      long_break_every: num(inputs.long_break_every ? inputs.long_break_every.value : (window.__SEND_PLAN_DEFAULT__?.long_break_every ?? 25), 25),
-      long_break_min_ms: num(inputs.long_break_min_ms ? inputs.long_break_min_ms.value : (window.__SEND_PLAN_DEFAULT__?.long_break_min_ms ?? 600000), 600000),
-      long_break_max_ms: num(inputs.long_break_max_ms ? inputs.long_break_max_ms.value : (window.__SEND_PLAN_DEFAULT__?.long_break_max_ms ?? 1200000), 1200000),
-      hard_stop_outside_window: (function () {
-        const el = inputs.hard_stop_outside_window;
-        if (!el) return !!(window.__SEND_PLAN_DEFAULT__?.hard_stop_outside_window);
-        if (el.type === 'checkbox') return !!el.checked;
-        const v = String(el.value || '').toLowerCase();
-        return (v === 'true' || v === '1' || v === 'sim' || v === 'yes' || v === 'on');
-      })()
-    };
-
-    return plan;
-  }
-
-  async function apiGetPlan() {
-    try {
-      const r = await fetch('/api/send-config', { method: 'GET' });
-      const j = await r.json();
-      if (j && j.status === 'success' && j.plan) return j.plan;
-    } catch(e) {}
-    return window.__SEND_PLAN_DEFAULT__ || null;
-  }
-
-  async function apiSavePlan(plan) {
-    const r = await fetch('/api/send-config', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ plan })
-    });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) {
-      const msg = (j && j.message) ? j.message : ('Erro HTTP ' + r.status);
-      throw new Error(msg);
-    }
-    if (!j || j.status !== 'success') throw new Error(j?.message || 'Falha ao salvar.');
-    return j.plan;
-  }
-
-  function ensureAdvancedUI() {
-    // tenta achar o container do "Avançado"
-    const adv = firstExisting([
-      '#advanced',
-      '#advancedSettings',
-      '#advanced-settings',
-      '#advancedPanel',
-      '#advanced-panel',
-      '[data-advanced="true"]',
-      '.advanced',
-      '.avancado',
-      '#collapseAdvanced',
-      '#advancedCollapse'
-    ]);
-
-    if (!adv) return null;
-
-    // cria um bloco se não existir
-    let box = qs('#__send_plan_box__');
-    if (!box) {
-      box = makeEl('div', { id: '__send_plan_box__', style: 'margin-top:12px;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(0,0,0,.12);' });
-      adv.appendChild(box);
-    }
-
-    // título
-    if (!qs('#__send_plan_title__')) {
-      box.appendChild(makeEl('div', { id: '__send_plan_title__', style: 'font-weight:700;margin-bottom:10px;' }, 'Configuração de envio (padrão)'));
-    }
-
-    function mkRow(label, inputHtml) {
-      const row = makeEl('div', { style: 'display:flex;gap:10px;align-items:center;margin:8px 0;flex-wrap:wrap;' });
-      row.appendChild(makeEl('div', { style: 'min-width:160px;opacity:.9;' }, label));
-      const wrap = makeEl('div', { style: 'flex:1;min-width:220px;' });
-      wrap.innerHTML = inputHtml;
-      row.appendChild(wrap);
-      return row;
-    }
-
-    // cria inputs se não existir (por IDs)
-    const exists = {
-      ws: !!qs('#planWindowStart'),
-      we: !!qs('#planWindowEnd'),
-      dmin: !!qs('#delayMinMs'),
-      dmax: !!qs('#delayMaxMs'),
-      lbe: !!qs('#longBreakEvery'),
-      lbmin: !!qs('#longBreakMinMs'),
-      lbmax: !!qs('#longBreakMaxMs'),
-      hard: !!qs('#hardStopOutsideWindow'),
-      btn: !!qs('#saveSendPlanBtn'),
-    };
-
-    if (!exists.ws) box.appendChild(mkRow('Janela início (HH:MM)', '<input id="planWindowStart" class="form-control" placeholder="08:00" style="max-width:220px;">'));
-    if (!exists.we) box.appendChild(mkRow('Janela fim (HH:MM)', '<input id="planWindowEnd" class="form-control" placeholder="19:00" style="max-width:220px;">'));
-    if (!exists.dmin) box.appendChild(mkRow('Delay mínimo (ms)', '<input id="delayMinMs" class="form-control" type="number" min="0" step="1000" placeholder="45000" style="max-width:220px;">'));
-    if (!exists.dmax) box.appendChild(mkRow('Delay máximo (ms)', '<input id="delayMaxMs" class="form-control" type="number" min="0" step="1000" placeholder="110000" style="max-width:220px;">'));
-    if (!exists.lbe) box.appendChild(mkRow('Pausa longa a cada X msgs', '<input id="longBreakEvery" class="form-control" type="number" min="0" step="1" placeholder="25" style="max-width:220px;">'));
-    if (!exists.lbmin) box.appendChild(mkRow('Pausa longa mín (ms)', '<input id="longBreakMinMs" class="form-control" type="number" min="0" step="1000" placeholder="600000" style="max-width:220px;">'));
-    if (!exists.lbmax) box.appendChild(mkRow('Pausa longa máx (ms)', '<input id="longBreakMaxMs" class="form-control" type="number" min="0" step="1000" placeholder="1200000" style="max-width:220px;">'));
-    if (!exists.hard) {
-      box.appendChild(mkRow('Hard stop fora da janela', '<div style="display:flex;align-items:center;gap:8px;"><input id="hardStopOutsideWindow" type="checkbox"><label for="hardStopOutsideWindow" style="opacity:.9;">Parar ao sair da janela (não esperar até amanhã)</label></div>'));
-    }
-
-    // botão salvar
-    if (!exists.btn) {
-      const btnRow = makeEl('div', { style: 'display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap;' });
-      const btn = makeEl('button', { id: 'saveSendPlanBtn', type: 'button', class: 'btn btn-success' }, 'Salvar configuração');
-      const hint = makeEl('div', { style: 'opacity:.75;font-size:12px;' }, 'Salva no servidor (send_plan.json) e vira padrão para os próximos envios.');
-      btnRow.appendChild(btn);
-      btnRow.appendChild(hint);
-      box.appendChild(btnRow);
-    }
-
-    return adv;
-  }
-
-  async function initAdvancedPlanUI() {
-    const adv = ensureAdvancedUI();
-    if (!adv) return;
-
-    const plan = await apiGetPlan();
-    if (plan) {
-      window.__SEND_PLAN_DEFAULT__ = plan;
-      fillInputsFromPlan(plan);
-    }
-
-    const btn = qs('#saveSendPlanBtn');
-    if (!btn) return;
-
-    if (btn.__bound__) return;
-    btn.__bound__ = true;
-
-    btn.addEventListener('click', async () => {
-      try {
-        btn.disabled = true;
-        btn.innerText = 'Salvando...';
-
-        const planToSave = collectPlanFromInputs();
-        const saved = await apiSavePlan(planToSave);
-
-        window.__SEND_PLAN_DEFAULT__ = saved;
-        fillInputsFromPlan(saved);
-
-        toast('Configuração salva com sucesso!', true);
-      } catch (e) {
-        toast('Falha ao salvar: ' + (e?.message || String(e)), false);
-      } finally {
-        btn.disabled = false;
-        btn.innerText = 'Salvar configuração';
-      }
-    });
-  }
-
-  function onReady(fn) {
-    if (document.readyState === 'complete' || document.readyState === 'interactive') fn();
-    else document.addEventListener('DOMContentLoaded', fn);
-  }
-
-  onReady(() => { initAdvancedPlanUI().catch(() => {}); });
-})();`;
-
-  res.send(js);
+`);
 });
 
-// ===== API: ler/salvar config de envio
-app.get('/api/send-config', (req, res) => {
-  try {
-    return res.json({
-      status: 'success',
-      plan: getDefaultPlanObject(),
-      source: persistedSendPlan ? 'disk' : 'env',
-    });
-  } catch (e) {
-    return res.status(500).json({ status: 'error', message: 'Falha ao ler configuração.', error: e?.message || String(e) });
-  }
+// ===== API simples (para compatibilidade do seu front)
+app.get('/api/plan', (req, res) => {
+  return res.json(getDefaultPlanObject());
 });
 
-app.post('/api/send-config', (req, res) => {
+app.post('/api/plan', (req, res) => {
   try {
-    const body = req.body || {};
-    const planRaw = (body.plan && typeof body.plan === 'object') ? body.plan : body;
-
-    const sanitized = sanitizePlanInput(planRaw);
-
+    const sanitized = sanitizePlanInput(req.body || {});
     persistedSendPlan = { ...sanitized };
     writeJsonAtomic(SEND_PLAN_FILE, persistedSendPlan);
-
     broadcast({ type: 'send_plan_saved', plan: persistedSendPlan });
-    console.log('[CFG] send_plan salvo em disco:', persistedSendPlan);
-
     return res.json({ status: 'success', message: 'Configuração salva.', plan: persistedSendPlan });
   } catch (e) {
     return res.status(400).json({ status: 'error', message: 'Falha ao salvar configuração.', error: e?.message || String(e) });
   }
 });
 
-// ===== Rotas
+// ============================================================
+// SEND ENGINE (fila + progress + pause/resume/cancel)
+// ============================================================
+function nowMs() { return Date.now(); }
+function randInt(min, max) {
+  const a = Math.ceil(Number(min));
+  const b = Math.floor(Number(max));
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return 0;
+  if (b <= a) return a;
+  return Math.floor(Math.random() * (b - a + 1)) + a;
+}
+
+function hhmmToMinutes(hhmm) {
+  const s = String(hhmm || '').trim();
+  const m = s.match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return 0;
+  const hh = clamp(parseInt(m[1], 10), 0, 23);
+  const mm = clamp(parseInt(m[2], 10), 0, 59);
+  return hh * 60 + mm;
+}
+
+function minutesNowLocal() {
+  const d = new Date();
+  return d.getHours() * 60 + d.getMinutes();
+}
+
+function isWithinWindowServer(plan) {
+  const start = hhmmToMinutes(plan.window_start);
+  const end = hhmmToMinutes(plan.window_end);
+  const nowMin = minutesNowLocal();
+
+  if (start === end) return true;
+  if (start < end) return (nowMin >= start && nowMin < end);
+  return (nowMin >= start || nowMin < end);
+}
+
+function msUntilNextWindowStart(plan) {
+  const start = hhmmToMinutes(plan.window_start);
+  const end = hhmmToMinutes(plan.window_end);
+  const now = new Date();
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+
+  if (start === end) return 0;
+
+  // janela normal
+  if (start < end) {
+    if (nowMin < start) {
+      const target = new Date(now.getTime());
+      target.setHours(Math.floor(start / 60), start % 60, 0, 0);
+      return Math.max(0, target.getTime() - now.getTime());
+    }
+    if (nowMin >= end) {
+      const target = new Date(now.getTime());
+      target.setDate(target.getDate() + 1);
+      target.setHours(Math.floor(start / 60), start % 60, 0, 0);
+      return Math.max(0, target.getTime() - now.getTime());
+    }
+    return 0;
+  }
+
+  // janela invertida (ex: 22:00–06:00)
+  const inWin = (nowMin >= start || nowMin < end);
+  if (inWin) return 0;
+
+  const target = new Date(now.getTime());
+  target.setHours(Math.floor(start / 60), start % 60, 0, 0);
+  return Math.max(0, target.getTime() - now.getTime());
+}
+
+const TEMP_UPLOAD_DIR = path.join(__dirname, 'uploads_tmp');
+function ensureDir(dir) { try { if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true }); } catch {} }
+ensureDir(TEMP_UPLOAD_DIR);
+
+function safeUnlink(filePath) { try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch {} }
+
+async function saveUploadedFilesToDisk(req) {
+  const out = [];
+  const filesObj = req.files || {};
+  const keys = Object.keys(filesObj);
+
+  for (const key of keys) {
+    const f = filesObj[key];
+    if (!f) continue;
+
+    // express-fileupload pode dar array
+    if (Array.isArray(f)) {
+      for (const fx of f) {
+        const saved = await saveOneFile(fx);
+        if (saved) out.push(saved);
+      }
+    } else {
+      const saved = await saveOneFile(f);
+      if (saved) out.push(saved);
+    }
+  }
+
+  // limita
+  return out.slice(0, 5);
+
+  async function saveOneFile(file) {
+    try {
+      const name = String(file.name || 'file.bin').replace(/[^\w.\-() ]+/g, '_');
+      const fp = path.join(TEMP_UPLOAD_DIR, `${Date.now()}_${Math.random().toString(16).slice(2)}_${name}`);
+      await file.mv(fp);
+      return { path: fp, name: name, mimetype: file.mimetype || '' };
+    } catch (e) {
+      console.log('[WARN] falha salvando arquivo:', e?.message || e);
+      return null;
+    }
+  }
+}
+
+function normalizeRecipients(rawRecipients) {
+  // rawRecipients vem como JSON string no form: [{"raw":"...","label":"...","vars":{...}}]
+  let arr = [];
+  try {
+    if (typeof rawRecipients === 'string') arr = JSON.parse(rawRecipients);
+    else if (Array.isArray(rawRecipients)) arr = rawRecipients;
+  } catch { arr = []; }
+
+  if (!Array.isArray(arr)) return [];
+
+  const out = [];
+  for (const r of arr) {
+    if (!r || typeof r !== 'object') continue;
+    const raw = String(r.raw || '').trim();
+    if (!raw) continue;
+    out.push({
+      raw,
+      label: String(r.label || raw),
+      vars: (r.vars && typeof r.vars === 'object') ? r.vars : {},
+    });
+  }
+  return out;
+}
+
+function normalizeMessage(str) {
+  let t = String(str ?? '');
+  t = t.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  t = t.replace(/\u2028|\u2029/g, '\n');
+  t = t.replace(/\u00A0/g, ' ');
+  t = t.replace(/[ \t]+\n/g, '\n');
+  return t;
+}
+
+function applyVarsToText(text, vars) {
+  const src = normalizeMessage(text);
+  const dict = {};
+  if (vars && typeof vars === 'object') {
+    for (const [k, v] of Object.entries(vars)) {
+      const key = String(k || '').trim().toLowerCase();
+      if (!key) continue;
+      if (v === null || v === undefined) continue;
+      dict[key] = (typeof v === 'string') ? v : String(v);
+    }
+  }
+  return src.replace(/\$([a-zA-Z0-9_]+)/g, (m, k) => {
+    const key = String(k).toLowerCase();
+    return (dict[key] !== undefined) ? dict[key] : m;
+  });
+}
+
+function looksLikeGroupId(s) {
+  const t = String(s || '').trim();
+  if (!t) return false;
+  if (t.includes('@g.us')) return true;
+  // alguns grupos vêm como "1203....-...." sem @g.us
+  return /^1203\d{8,}-\d+$/g.test(t) || /^(\d+)-(\d+)$/g.test(t);
+}
+
+function extractDigits(s) {
+  return String(s || '').replace(/[^\d]/g, '');
+}
+
+function normalizeNumberByCountry(digits, country) {
+  const c = String(country || '').trim().toUpperCase();
+
+  if (!digits) return '';
+
+  // BR: se usuário mandou sem DDI e parece DDD+numero (10/11), prefixa 55
+  if (c === 'BR') {
+    if (digits.startsWith('55')) return digits;
+    if (digits.length === 10 || digits.length === 11) return `55${digits}`;
+    return digits; // já veio completo ou é algo diferente
+  }
+
+  // US: prefixa 1 quando 10 dígitos
+  if (c === 'US') {
+    if (digits.startsWith('1')) return digits;
+    if (digits.length === 10) return `1${digits}`;
+    return digits;
+  }
+
+  // OTHER: não mexe
+  return digits;
+}
+
+async function resolveWaTarget(client, raw, country) {
+  const s = String(raw || '').trim();
+  if (!s) throw new Error('Destinatário vazio');
+
+  // já é jid
+  if (s.includes('@c.us') || s.includes('@g.us')) {
+    // valida grupo se for g.us
+    if (s.includes('@g.us')) {
+      try {
+        await client.getChatById(s);
+      } catch {
+        throw new Error(`Grupo inválido/inacessível: ${s}`);
+      }
+    }
+    return s;
+  }
+
+  // grupo sem @g.us
+  if (looksLikeGroupId(s)) {
+    const gid = s.includes('@g.us') ? s : `${s}@g.us`;
+    try {
+      await client.getChatById(gid);
+    } catch {
+      throw new Error(`Grupo inválido/inacessível: ${gid}`);
+    }
+    return gid;
+  }
+
+  // número
+  const digits0 = extractDigits(s);
+  const digits = normalizeNumberByCountry(digits0, country);
+
+  if (!digits || digits.length < 8) throw new Error(`Número inválido: ${s}`);
+
+  // valida se existe no WhatsApp
+  // getNumberId retorna null/undefined quando não existe
+  let numberId;
+  try {
+    numberId = await client.getNumberId(digits);
+  } catch (e) {
+    // algumas versões esperam número sem +
+    throw new Error(`Falha getNumberId(${digits}): ${e?.message || String(e)}`);
+  }
+
+  const jid =
+    numberId?._serialized ||
+    numberId?.serialized ||
+    numberId?.id?._serialized ||
+    numberId?.id?.serialized ||
+    null;
+
+  if (!jid) {
+    throw new Error(`Número não registrado no WhatsApp: ${digits}`);
+  }
+
+  return jid;
+}
+
+function newJobId() {
+  return `job_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+}
+
+let sendQueue = [];
+let sendProcessing = false;
+let activeJob = null;
+
+// controle global (botões do front)
+let controlState = {
+  paused: false,
+  canceled: false,
+  pauseReason: '',
+};
+
+function getSendSnapshot() {
+  const q = sendQueue.map(j => ({ jobId: j.id, total: j.total, createdAt: j.createdAt, state: j.state }));
+  const a = activeJob ? {
+    jobId: activeJob.id,
+    total: activeJob.total,
+    current: activeJob.current,
+    success: activeJob.success,
+    failed: activeJob.failed,
+    state: activeJob.state,
+    label: activeJob.label || '',
+    createdAt: activeJob.createdAt,
+    startedAt: activeJob.startedAt || 0,
+  } : null;
+
+  return {
+    jobId: a?.jobId || null,
+    active: a,
+    queue: q,
+    paused: controlState.paused,
+    canceled: controlState.canceled
+  };
+}
+
+function emitJobEvent(job, event, extra = {}) {
+  broadcast({
+    type: 'send_job',
+    event,
+    jobId: job?.id || null,
+    state: job?.state || null,
+    total: job?.total || 0,
+    current: job?.current || 0,
+    success: job?.success || 0,
+    failed: job?.failed || 0,
+    label: job?.label || '',
+    message: job?.messageHint || '',
+    ...extra
+  });
+}
+
+function setPaused(paused, reason) {
+  controlState.paused = !!paused;
+  controlState.pauseReason = reason ? String(reason) : '';
+}
+
+function setCanceled(canceled) {
+  controlState.canceled = !!canceled;
+}
+
+async function waitWhilePausedOrCanceled(job) {
+  while (true) {
+    if (controlState.canceled || job.canceled) {
+      job.canceled = true;
+      job.state = 'CANCELED';
+      emitJobEvent(job, 'canceled', { message: 'Cancelado pelo operador.' });
+      throw new Error('JOB_CANCELED');
+    }
+
+    if (!controlState.paused && !job.paused) return;
+
+    job.state = 'PAUSED';
+    emitJobEvent(job, 'paused', { message: controlState.pauseReason || job.pauseReason || 'Pausado.' });
+
+    await sleep(700);
+  }
+}
+
+async function sleepWithControl(job, ms, kindLabel) {
+  const total = Math.max(0, Number(ms || 0));
+  if (!total) return;
+
+  const step = 500;
+  let waited = 0;
+  while (waited < total) {
+    await waitWhilePausedOrCanceled(job);
+    const chunk = Math.min(step, total - waited);
+    await sleep(chunk);
+    waited += chunk;
+
+    if (kindLabel && (waited % 2000 < step)) {
+      emitJobEvent(job, 'tick', {
+        label: kindLabel,
+        state: job.state,
+        message: `${kindLabel}: ${Math.ceil((total - waited) / 1000)}s`
+      });
+    }
+  }
+}
+
+async function processQueueLoop() {
+  if (sendProcessing) return;
+  sendProcessing = true;
+
+  try {
+    while (sendQueue.length > 0) {
+      const job = sendQueue.shift();
+      activeJob = job;
+
+      job.startedAt = nowMs();
+      job.state = 'RUNNING';
+      job.current = 0;
+      job.success = 0;
+      job.failed = 0;
+      job.paused = false;
+      job.canceled = false;
+
+      setCanceled(false);
+
+      emitJobEvent(job, 'started', { message: 'Iniciando envio...' });
+
+      try {
+        await runJob(job);
+        if (!job.canceled) {
+          job.state = 'DONE';
+          emitJobEvent(job, 'completed', { message: 'Concluído.' });
+        }
+      } catch (e) {
+        const msg = e?.message || String(e);
+
+        if (msg === 'JOB_CANCELED') {
+          // já emitiu canceled
+        } else {
+          job.state = 'ERROR';
+          emitJobEvent(job, 'error', { message: msg || 'Erro no job.' });
+        }
+      } finally {
+        try {
+          for (const f of (job.files || [])) safeUnlink(f.path);
+        } catch {}
+
+        activeJob = null;
+      }
+    }
+  } finally {
+    sendProcessing = false;
+  }
+}
+
+async function runJob(job) {
+  const client = waState.client;
+  if (!client || !waState.authenticated) throw new Error('WhatsApp não está conectado.');
+
+  const plan = sanitizePlanInput(job.plan || {});
+  const recipients = Array.isArray(job.recipients) ? job.recipients : [];
+  const total = recipients.length;
+
+  job.total = total;
+
+  if (!total) throw new Error('Lista de destinatários vazia.');
+
+  emitJobEvent(job, 'tick', { current: 0, total, success: 0, failed: 0, state: 'RUNNING', label: 'Preparando...' });
+
+  // janela
+  while (!isWithinWindowServer(plan)) {
+    await waitWhilePausedOrCanceled(job);
+
+    const waitMs = msUntilNextWindowStart(plan);
+    if (!waitMs) break;
+
+    job.state = 'WAIT_WINDOW';
+    emitJobEvent(job, 'wait_window', {
+      message: `Fora da janela (${plan.window_start}–${plan.window_end}) • aguardando ${Math.ceil(waitMs/1000)}s`,
+      waitMs
+    });
+
+    if (plan.hard_stop_outside_window) {
+      setPaused(true, `Fora da janela (${plan.window_start}–${plan.window_end})`);
+      job.paused = true;
+      job.pauseReason = `Fora da janela (${plan.window_start}–${plan.window_end})`;
+      await waitWhilePausedOrCanceled(job);
+    } else {
+      await sleepWithControl(job, waitMs, 'FORA DA JANELA');
+    }
+  }
+
+  job.state = 'RUNNING';
+  emitJobEvent(job, 'resumed', { message: 'Dentro da janela. Iniciando envios.' });
+
+  for (let i = 0; i < total; i++) {
+    await waitWhilePausedOrCanceled(job);
+
+    while (!isWithinWindowServer(plan)) {
+      await waitWhilePausedOrCanceled(job);
+
+      const waitMs = msUntilNextWindowStart(plan);
+      if (!waitMs) break;
+
+      job.state = 'WAIT_WINDOW';
+      emitJobEvent(job, 'wait_window', {
+        current: job.current,
+        total: job.total,
+        success: job.success,
+        failed: job.failed,
+        message: `Fora da janela (${plan.window_start}–${plan.window_end}) • aguardando ${Math.ceil(waitMs/1000)}s`,
+        waitMs
+      });
+
+      if (plan.hard_stop_outside_window) {
+        setPaused(true, `Fora da janela (${plan.window_start}–${plan.window_end})`);
+        job.paused = true;
+        job.pauseReason = `Fora da janela (${plan.window_start}–${plan.window_end})`;
+        await waitWhilePausedOrCanceled(job);
+      } else {
+        await sleepWithControl(job, waitMs, 'FORA DA JANELA');
+      }
+    }
+
+    const r = recipients[i];
+    const raw = r?.raw || '';
+    const label = r?.label || raw;
+
+    const text = applyVarsToText(job.message, r?.vars || {});
+    job.label = label;
+    job.state = 'RUNNING';
+
+    emitJobEvent(job, 'tick', {
+      current: job.current,
+      total: job.total,
+      success: job.success,
+      failed: job.failed,
+      state: job.state,
+      label: `RESOLVENDO: ${label}`
+    });
+
+    let target = null;
+    try {
+      target = await resolveWaTarget(client, raw, job.country || 'BR');
+    } catch (e) {
+      job.current += 1;
+      job.failed += 1;
+      emitJobEvent(job, 'tick', {
+        current: job.current,
+        total: job.total,
+        success: job.success,
+        failed: job.failed,
+        state: job.state,
+        label: `FALHA (DESTINO): ${label}`,
+        message: e?.message || String(e)
+      });
+      // segue pro próximo
+      continue;
+    }
+
+    emitJobEvent(job, 'tick', {
+      current: job.current,
+      total: job.total,
+      success: job.success,
+      failed: job.failed,
+      state: job.state,
+      label: `ENVIANDO PARA: ${label}`
+    });
+
+    try {
+      // anexos
+      if (job.files && job.files.length) {
+        for (const file of job.files) {
+          await waitWhilePausedOrCanceled(job);
+
+          const media = MessageMedia.fromFilePath(file.path);
+          const sentMediaMsg = await client.sendMessage(target, media, { caption: '' });
+
+          const mediaId = ackKeyFromMessage(sentMediaMsg);
+          if (mediaId) {
+            await waitForAck(mediaId, WA_ACK_MIN_LEVEL, WA_ACK_TIMEOUT_MS);
+          } else {
+            // se não tem id, não dá pra esperar ack; força falha "honesta"
+            throw new Error('Sem ID da mídia para aguardar ACK');
+          }
+
+          await sleepWithControl(job, 600, 'ENVIANDO MÍDIA');
+        }
+      }
+
+      const sentTextMsg = await client.sendMessage(target, text);
+
+      const msgId = ackKeyFromMessage(sentTextMsg);
+      if (msgId) {
+        await waitForAck(msgId, WA_ACK_MIN_LEVEL, WA_ACK_TIMEOUT_MS);
+      } else {
+        throw new Error('Sem ID da mensagem para aguardar ACK');
+      }
+
+      job.current += 1;
+      job.success += 1;
+
+      emitJobEvent(job, 'tick', {
+        current: job.current,
+        total: job.total,
+        success: job.success,
+        failed: job.failed,
+        state: job.state,
+        label: `ENVIADO (ACK): ${label}`
+      });
+    } catch (e) {
+      job.current += 1;
+      job.failed += 1;
+
+      emitJobEvent(job, 'tick', {
+        current: job.current,
+        total: job.total,
+        success: job.success,
+        failed: job.failed,
+        state: job.state,
+        label: `FALHA: ${label}`,
+        message: e?.message || String(e)
+      });
+    }
+
+    if (i < total - 1) {
+      const nextIndex = i + 1;
+      const every = Math.max(0, Number(plan.long_break_every || 0));
+      const doLong = (every > 0) ? (nextIndex % every === 0) : false;
+
+      if (doLong) {
+        const waitMs = randInt(plan.long_break_min_ms, plan.long_break_max_ms);
+        emitJobEvent(job, 'tick', {
+          current: job.current,
+          total: job.total,
+          success: job.success,
+          failed: job.failed,
+          state: job.state,
+          label: `PAUSA LONGA (${Math.ceil(waitMs/1000)}s)`
+        });
+        await sleepWithControl(job, waitMs, 'PAUSA LONGA');
+      } else {
+        const waitMs = randInt(plan.delay_min_ms, plan.delay_max_ms);
+        emitJobEvent(job, 'tick', {
+          current: job.current,
+          total: job.total,
+          success: job.success,
+          failed: job.failed,
+          state: job.state,
+          label: `DELAY (${Math.ceil(waitMs/1000)}s)`
+        });
+        await sleepWithControl(job, waitMs, 'DELAY');
+      }
+    }
+  }
+}
+
+// ===== API: controle pause/resume/cancel
+app.post('/api/send-control', (req, res) => {
+  try {
+    const action = String(req.body?.action || '').trim().toLowerCase();
+    const jobId = String(req.body?.jobId || '').trim();
+
+    const job = activeJob;
+
+    if (!job) {
+      if (action === 'pause') setPaused(true, 'Pausado (sem job ativo).');
+      if (action === 'resume') setPaused(false, '');
+      if (action === 'cancel') setCanceled(true);
+      return res.json({ status: 'success', message: 'Sem job ativo.' });
+    }
+
+    if (jobId && job.id && jobId !== job.id) {
+      return res.json({ status: 'success', message: 'JobId não bateu. Controle aplicado ao job ativo.', activeJobId: job.id });
+    }
+
+    if (action === 'pause') {
+      setPaused(true, 'Pausado pelo operador.');
+      job.paused = true;
+      job.pauseReason = 'Pausado pelo operador.';
+      emitJobEvent(job, 'paused', { message: job.pauseReason });
+      return res.json({ status: 'success', message: 'Pausado.' });
+    }
+
+    if (action === 'resume') {
+      setPaused(false, '');
+      job.paused = false;
+      job.pauseReason = '';
+      emitJobEvent(job, 'resumed', { message: 'Retomado.' });
+      return res.json({ status: 'success', message: 'Retomado.' });
+    }
+
+    if (action === 'cancel') {
+      setCanceled(true);
+      job.canceled = true;
+      emitJobEvent(job, 'canceled', { message: 'Cancelado pelo operador.' });
+      return res.json({ status: 'success', message: 'Cancelamento solicitado.' });
+    }
+
+    return res.status(400).json({ status: 'error', message: 'Ação inválida. Use pause|resume|cancel.' });
+  } catch (e) {
+    return res.status(500).json({ status: 'error', message: 'Falha ao controlar envio.', error: e?.message || String(e) });
+  }
+});
+
+// ===== API: criar job e enfileirar
+app.post('/api/send', async (req, res) => {
+  try {
+    if (!waState.client || !waState.authenticated) {
+      return res.status(400).json({ status: 'error', message: 'WhatsApp não está conectado.' });
+    }
+
+    const recipientsRaw = req.body?.recipients;
+    const messageRaw = req.body?.message;
+    const planRaw = req.body?.plan;
+
+    const country = String(req.body?.country || 'BR').trim().toUpperCase();
+
+    const recipients = normalizeRecipients(recipientsRaw);
+    const message = normalizeMessage(messageRaw);
+
+    if (!message || !message.replace(/\s/g, '').length) {
+      return res.status(400).json({ status: 'error', message: 'Mensagem vazia.' });
+    }
+    if (!recipients.length) {
+      return res.status(400).json({ status: 'error', message: 'Destinatários vazios.' });
+    }
+
+    let planObj = null;
+    try {
+      planObj = planRaw ? JSON.parse(String(planRaw)) : null;
+    } catch {
+      planObj = null;
+    }
+
+    const files = await saveUploadedFilesToDisk(req);
+
+    const job = {
+      id: newJobId(),
+      createdAt: nowMs(),
+      startedAt: 0,
+      state: 'QUEUED',
+      total: recipients.length,
+      current: 0,
+      success: 0,
+      failed: 0,
+      label: '',
+      messageHint: '',
+      recipients,
+      message,
+      plan: planObj || getDefaultPlanObject(),
+      files,
+      paused: false,
+      pauseReason: '',
+      canceled: false,
+      country,
+    };
+
+    sendQueue.push(job);
+
+    emitJobEvent(job, 'queued', { message: 'Enfileirado.' });
+
+    processQueueLoop().catch(() => {});
+
+    return res.json({
+      status: 'success',
+      message: `Envio enfileirado com sucesso.`,
+      jobId: job.id,
+      total: job.total
+    });
+  } catch (e) {
+    console.log('[ERR] /api/send:', e?.message || e);
+    return res.status(500).json({ status: 'error', message: 'Falha ao enfileirar envio.', error: e?.message || String(e) });
+  }
+});
+
+// ============================================================
+// ROTAS DE QR/STATUS/RESET
+// ============================================================
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
@@ -881,643 +1398,49 @@ app.get('/api/status', async (req, res) => {
 app.get('/api/disconnect', async (req, res) => {
   try {
     broadcast({ type: 'manual_disconnect' });
+
     await restartClient({ reason: 'manual_disconnect', wipeSession: false, doLogout: true });
-    return res.send('Desconectado e reinicializado com sucesso!');
-  } catch (err) {
-    console.log('[ERR] /api/disconnect:', err?.message || err);
-    return res.status(500).json({ status: 'error', message: 'Erro ao desconectar.', error: err?.message || String(err) });
+
+    return res.send('Desconectado. Gere um novo QR se necessário.');
+  } catch (e) {
+    console.log('[ERR] /api/disconnect:', e?.message || e);
+    return res.status(500).send('Falha ao desconectar.');
   }
 });
 
 app.get('/api/reset', async (req, res) => {
   try {
     broadcast({ type: 'manual_reset' });
+
     await restartClient({ reason: 'manual_reset', wipeSession: true, doLogout: true });
-    return res.send('Sessão limpa e reinicializada! Gere novo QR.');
-  } catch (err) {
-    console.log('[ERR] /api/reset:', err?.message || err);
-    return res.status(500).json({ status: 'error', message: 'Erro ao resetar sessão.', error: err?.message || String(err) });
+
+    return res.send('Sessão resetada. Gere novo QR.');
+  } catch (e) {
+    console.log('[ERR] /api/reset:', e?.message || e);
+    return res.status(500).send('Falha ao resetar sessão.');
   }
 });
-
-async function assertConnectedOrThrow() {
-  const c = waState.client;
-  if (!c) throw new Error('Cliente não inicializado.');
-
-  const st = await c.getState();
-  if (st !== 'CONNECTED') throw new Error(`Cliente não conectado (state=${st}).`);
-
-  if (!waState.authenticated) waState.authenticated = true;
-}
-
-function normalizeNewlines(s) {
-  let t = String(s ?? '');
-  t = t.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  t = t.replace(/\u2028|\u2029/g, '\n');
-  t = t.replace(/\u00A0/g, ' ');
-  t = t.replace(/[ \t]+\n/g, '\n');
-  return t;
-}
-
-// ✅ template $variavel -> valor
-function applyTemplateVars(text, vars) {
-  const src = normalizeNewlines(text);
-
-  const dict = {};
-  if (vars && typeof vars === 'object') {
-    for (const [k, v] of Object.entries(vars)) {
-      const key = String(k || '').trim().toLowerCase();
-      if (!key) continue;
-      if (v === null || v === undefined) continue;
-      dict[key] = (typeof v === 'string') ? v : String(v);
-    }
-  }
-
-  return src.replace(/\$([a-zA-Z0-9_]+)/g, (m, k) => {
-    const key = String(k).toLowerCase();
-    return (dict[key] !== undefined) ? dict[key] : m;
-  });
-}
-
-const sendMessageWithTimeout = async (chatId, message, file, timeout = 25000) => {
-  const c = waState.client;
-  if (!c) throw new Error('Cliente não inicializado.');
-
-  return await withTimeout(
-    (async () => {
-      const imageRegex = /\[img\s*=\s*(https?:\/\/[^\s]+)\]/i;
-      const pdfRegex = /\[pdf\s*=\s*(https?:\/\/[^\s]+)\]/i;
-
-      const msg = normalizeNewlines(message);
-
-      let match = (msg || '').match(imageRegex);
-      if (match) {
-        const imageUrl = match[1];
-        const media = await MessageMedia.fromUrl(imageUrl);
-        const caption = (msg || '').replace(imageRegex, '');
-        await c.sendMessage(chatId, media, { caption: caption });
-        return;
-      }
-
-      match = (msg || '').match(pdfRegex);
-      if (match) {
-        const pdfUrl = match[1];
-        const media = await MessageMedia.fromUrl(pdfUrl);
-        const caption = (msg || '').replace(pdfRegex, '');
-        await c.sendMessage(chatId, media, { caption: caption });
-        return;
-      }
-
-      if (file) {
-        const tmpName = `${Date.now()}_${Math.random().toString(16).slice(2)}_${file.name}`;
-        const filePath = path.join('/tmp', tmpName);
-        await file.mv(filePath);
-
-        try {
-          const media = MessageMedia.fromFilePath(filePath);
-          await c.sendMessage(chatId, media, { caption: msg || '' });
-        } finally {
-          fs.unlink(filePath, () => {});
-        }
-        return;
-      }
-
-      await c.sendMessage(chatId, msg || '');
-    })(),
-    timeout,
-    'sendMessageWithTimeout'
-  );
-};
-
-// =========================
-// ✅ BR: NORMALIZAÇÃO CORRETA + FALLBACK COM 9
-// =========================
-function onlyDigits(v) {
-  return String(v || '').replace(/\D/g, '');
-}
-
-/**
- * Retorna E.164 "55DDxxxxxxxx" ou "55DD9xxxxxxxx" (somente dígitos),
- * sem tentar adivinhar se é fixo/móvel.
- */
-function formatPhoneNumberBrazil(phone) {
-  let d = onlyDigits(phone);
-
-  // remove zeros à esquerda comuns (ex: 0DD..., 00...)
-  d = d.replace(/^0+/, '');
-
-  // se veio com 55, mantém
-  if (d.startsWith('55')) return d;
-
-  // se veio com 10/11 dígitos (DD + num), prefixa 55
-  if (d.length === 10 || d.length === 11) return '55' + d;
-
-  // se veio com 8/9 dígitos sem DDD, não dá pra inferir com segurança
-  return d;
-}
-
-/**
- * Validação “leve”: checa se parece BR com DDI 55 + DDD.
- * NÃO decide fixo/móvel.
- */
-function isValidBrazilianFormat(phone) {
-  const d = formatPhoneNumberBrazil(phone);
-
-  if (!d.startsWith('55')) return false;
-  if (!(d.length === 12 || d.length === 13)) return false;
-
-  const ddd = d.substring(2, 4);
-  if (ddd < '10' || ddd > '99') return false;
-
-  return true;
-}
-
-/**
- * Resolve WID real via getNumberId com fallback:
- * - tenta como veio
- * - se for 12 dígitos (55 + DD + 8), tenta inserir 9 após DDD (55DD9 + 8)
- */
-async function resolveNumberToWid(recipientRaw) {
-  const c = waState.client;
-  if (!c) throw new Error('Cliente não inicializado.');
-
-  const e164 = formatPhoneNumberBrazil(recipientRaw);
-
-  if (!isValidBrazilianFormat(e164)) {
-    throw new Error(`Número BR inválido: "${recipientRaw}" -> "${e164}"`);
-  }
-
-  const candidates = [];
-  candidates.push(e164);
-
-  if (e164.startsWith('55') && e164.length === 12) {
-    const ddd = e164.substring(2, 4);
-    const local8 = e164.substring(4); // 8 dígitos
-    const with9 = `55${ddd}9${local8}`;
-    candidates.push(with9);
-  }
-
-  let lastErr = null;
-
-  for (const cand of candidates) {
-    console.log(`[RESOLVE] raw="${recipientRaw}" -> try="${cand}"`);
-    try {
-      const numberId = await withTimeout(c.getNumberId(cand), 15000, `client.getNumberId(${cand})`);
-      if (numberId && numberId._serialized) {
-        console.log(`[RESOLVE] try="${cand}" -> wid="${numberId._serialized}"`);
-        return numberId._serialized;
-      }
-      lastErr = new Error(`Número não encontrado/registrado no WhatsApp: ${cand}`);
-      console.log(`[RESOLVE] try="${cand}" -> NOT FOUND`);
-    } catch (e) {
-      lastErr = e;
-      console.log(`[RESOLVE] try="${cand}" -> ERROR:`, e?.message || String(e));
-    }
-  }
-
-  throw new Error(lastErr?.message || `Falha ao resolver número: ${recipientRaw}`);
-}
-
-function normalizeRecipientToTarget(raw) {
-  const recipientTrimmed = (raw || '').trim();
-  if (!recipientTrimmed) return null;
-
-  // número
-  if (/^\+?\d+$/.test(recipientTrimmed.replace(/\D/g, ''))) {
-    const number = recipientTrimmed.replace(/\D/g, '');
-    return { type: 'number', raw: number };
-  }
-
-  // grupo
-  return { type: 'group', groupName: recipientTrimmed };
-}
-
-function parseRecipientsField(recipientsField) {
-  if (recipientsField === undefined || recipientsField === null) return [];
-
-  if (Array.isArray(recipientsField)) return recipientsField;
-
-  const s = String(recipientsField).trim();
-  if (!s) return [];
-
-  if ((s.startsWith('[') && s.endsWith(']')) || (s.startsWith('{') && s.endsWith('}'))) {
-    try {
-      const parsed = JSON.parse(s);
-      if (Array.isArray(parsed)) return parsed;
-      return [parsed];
-    } catch {}
-  }
-
-  return s.split(',').map(x => x.trim()).filter(Boolean);
-}
 
 // ============================================================
-// ✅ DISPATCH SCHEDULER (08:00–19:00 + random delays + breaks)
+// START SERVER
 // ============================================================
-
-function nowLocalMinutes() {
-  const d = new Date();
-  return d.getHours() * 60 + d.getMinutes();
-}
-
-function msUntilLocalMinute(targetMinute) {
-  const now = new Date();
-  const curMin = now.getHours() * 60 + now.getMinutes();
-  const curSec = now.getSeconds();
-  const curMs = now.getMilliseconds();
-
-  let diffMin = targetMinute - curMin;
-  if (diffMin < 0) diffMin += 24 * 60;
-
-  // até o início do minuto alvo (com segundos/ms zerados)
-  const msToNextMinBoundary = (60 - curSec) * 1000 - curMs;
-  const msToTarget = (diffMin === 0) ? 0 : (diffMin - 1) * 60 * 1000 + msToNextMinBoundary;
-
-  return Math.max(0, msToTarget);
-}
-
-function randInt(min, max) {
-  const a = Math.ceil(min);
-  const b = Math.floor(max);
-  if (b <= a) return a;
-  return Math.floor(Math.random() * (b - a + 1)) + a;
-}
-
-function pickDelayMs(plan) {
-  // delay curto “humano” entre mensagens
-  const minMs = Math.max(0, Number(plan.delay_min_ms || 45000));
-  const maxMs = Math.max(minMs, Number(plan.delay_max_ms || 110000));
-  return randInt(minMs, maxMs);
-}
-
-function shouldTakeLongBreak(i1based, plan) {
-  const every = Math.max(0, Number(plan.long_break_every || 25));
-  if (!every) return false;
-  return (i1based % every) === 0;
-}
-
-function pickLongBreakMs(plan) {
-  const minMs = Math.max(0, Number(plan.long_break_min_ms || 10 * 60 * 1000));
-  const maxMs = Math.max(minMs, Number(plan.long_break_max_ms || 20 * 60 * 1000));
-  return randInt(minMs, maxMs);
-}
-
-function isWithinWindow(nowMin, startMin, endMin) {
-  if (startMin === endMin) return true; // janela 24h
-  if (startMin < endMin) return nowMin >= startMin && nowMin < endMin;
-  // janela cruza meia-noite
-  return nowMin >= startMin || nowMin < endMin;
-}
-
-function normalizeSendPlanFromBody(body) {
-  const base = getDefaultPlanObject();
-  const p = (body && body.plan && typeof body.plan === 'object') ? body.plan : {};
-
-  // window: body -> base -> env/padrão
-  const startMin = parseHHMM(p.window_start || body?.window_start || base.window_start, parseHHMM(base.window_start || '08:00', 8 * 60));
-  const endMin = parseHHMM(p.window_end || body?.window_end || base.window_end, parseHHMM(base.window_end || '19:00', 19 * 60));
-
-  // random delay seconds (fallback usando seu delayInput antigo)
-  const delaySecLegacy = (body && body.delay !== undefined) ? Number(body.delay) : 1.2;
-  const legacyMs = clamp(Math.floor(delaySecLegacy * 1000), 0, 60000);
-
-  const hasCustomDelay = (p.delay_min_ms !== undefined || p.delay_max_ms !== undefined);
-
-  const delay_min_ms = hasCustomDelay
-    ? Number(p.delay_min_ms ?? base.delay_min_ms ?? 45000)
-    : (legacyMs >= 2000 ? legacyMs : Number(base.delay_min_ms ?? 45000));
-
-  const delay_max_ms = hasCustomDelay
-    ? Number(p.delay_max_ms ?? base.delay_max_ms ?? 110000)
-    : (legacyMs >= 2000 ? legacyMs : Number(base.delay_max_ms ?? 110000));
-
-  const long_break_every = Number(p.long_break_every ?? base.long_break_every ?? 25);
-  const long_break_min_ms = Number(p.long_break_min_ms ?? base.long_break_min_ms ?? (10 * 60 * 1000));
-  const long_break_max_ms = Number(p.long_break_max_ms ?? base.long_break_max_ms ?? (20 * 60 * 1000));
-
-  const hard_stop_outside_window = String(p.hard_stop_outside_window ?? base.hard_stop_outside_window ?? 'false').toLowerCase() === 'true';
-
-  return {
-    window_start_min: startMin,
-    window_end_min: endMin,
-    delay_min_ms: clamp(delay_min_ms, 0, 10 * 60 * 1000),
-    delay_max_ms: clamp(delay_max_ms, 0, 10 * 60 * 1000),
-    long_break_every: clamp(long_break_every, 0, 5000),
-    long_break_min_ms: clamp(long_break_min_ms, 0, 6 * 60 * 60 * 1000),
-    long_break_max_ms: clamp(long_break_max_ms, 0, 6 * 60 * 60 * 1000),
-    hard_stop_outside_window,
-  };
-}
-
-async function enforceWindowOrWait(plan) {
-  const startMin = plan.window_start_min;
-  const endMin = plan.window_end_min;
-  const nowMin = nowLocalMinutes();
-
-  if (isWithinWindow(nowMin, startMin, endMin)) return;
-
-  // fora da janela: esperar até próxima abertura
-  const waitMs = msUntilLocalMinute(startMin);
-  const startHH = String(Math.floor(startMin / 60)).padStart(2, '0');
-  const startMM = String(startMin % 60).padStart(2, '0');
-  const endHH = String(Math.floor(endMin / 60)).padStart(2, '0');
-  const endMM = String(endMin % 60).padStart(2, '0');
-
-  broadcast({
-    type: 'send_pause_window',
-    message: `Fora da janela (${startHH}:${startMM}–${endHH}:${endMM}). Aguardando abertura...`,
-    waitMs
-  });
-
-  console.log(`[PLAN] fora da janela ${startHH}:${startMM}–${endHH}:${endMM}. wait=${waitMs}ms`);
-  await sleep(waitMs);
-}
-
-function nowHHMM() {
-  const d = new Date();
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  return `${hh}:${mm}`;
-}
-
-app.post('/api/send', async (req, res) => {
-  const startTime = new Date();
-  console.log(`[${startTime.toISOString()}] [HTTP] /api/send - Iniciando envio`);
-
-  try {
-    const country = (req.body && req.body.country) ? String(req.body.country) : 'BR';
-
-    const messageRaw = normalizeNewlines(req.body?.message ?? '');
-    const recipientsRaw = parseRecipientsField(req.body?.recipients);
-
-    const file = req.files ? (req.files.file || null) : null;
-
-    if (!recipientsRaw.length || !messageRaw) {
-      return res.status(400).json({ status: 'error', message: 'Campos obrigatórios: recipients, message' });
-    }
-
-    await assertConnectedOrThrow();
-
-    const recipientList = recipientsRaw.map((it) => {
-      if (typeof it === 'string') {
-        return { raw: it.trim(), vars: {} };
-      }
-      if (it && typeof it === 'object') {
-        if (it.raw) return { raw: String(it.raw).trim(), vars: (it.vars && typeof it.vars === 'object') ? it.vars : {} };
-        if (it.telefone) {
-          const vars = { ...it };
-          return { raw: String(it.telefone).trim(), vars };
-        }
-      }
-      return null;
-    }).filter(Boolean);
-
-    if (!recipientList.length) {
-      return res.status(400).json({ status: 'error', message: 'Nenhum destinatário válido.' });
-    }
-
-    let successCount = 0;
-    let errorCount = 0;
-    const errors = [];
-
-    // ✅ BR: só normaliza, NÃO remove recipient cedo
-    if (country === 'BR') {
-      for (let i = 0; i < recipientList.length; i++) {
-        const r = recipientList[i];
-        const original = r.raw;
-
-        const digits = onlyDigits(original);
-        if (digits.length >= 10) {
-          const formatted = formatPhoneNumberBrazil(original);
-          if (!r.vars) r.vars = {};
-          if (!r.vars.telefone) r.vars.telefone = original;
-          r.vars.telefone_formatado = formatted;
-          r.raw = formatted;
-          console.log(`[FORMAT] ${original} -> ${formatted}`);
-        }
-      }
-    }
-
-    // ✅ Plano de envio (agora com padrão salvo)
-    const plan = normalizeSendPlanFromBody(req.body);
-    const baseForUi = getDefaultPlanObject();
-
-    broadcast({
-      type: 'send_plan',
-      plan: {
-        window_start: req.body?.plan?.window_start || req.body?.window_start || baseForUi.window_start || process.env.SEND_WINDOW_START || '08:00',
-        window_end: req.body?.plan?.window_end || req.body?.window_end || baseForUi.window_end || process.env.SEND_WINDOW_END || '19:00',
-        delay_min_ms: plan.delay_min_ms,
-        delay_max_ms: plan.delay_max_ms,
-        long_break_every: plan.long_break_every,
-        long_break_min_ms: plan.long_break_min_ms,
-        long_break_max_ms: plan.long_break_max_ms,
-        hard_stop_outside_window: plan.hard_stop_outside_window,
-      }
-    });
-
-    let chatsCache = null;
-    async function getChatsCached() {
-      if (!chatsCache) chatsCache = await waState.client.getChats();
-      return chatsCache;
-    }
-
-    broadcast({ type: 'send_progress', total: recipientList.length, current: 0, step: 'starting' });
-
-    // ✅ Enfileira (não trava a API em concorrência)
-    enqueueSend(async () => {
-      broadcast({ type: 'send_progress', total: recipientList.length, current: 0, step: 'sending' });
-
-      for (let i = 0; i < recipientList.length; i++) {
-        const entry = recipientList[i];
-        const recipient = entry.raw;
-        const progressCurrent = i + 1;
-
-        // 1) Janela (default salvo / env / body)
-        await enforceWindowOrWait(plan);
-
-        // opcional: hard stop ao sair da janela (em vez de esperar até amanhã)
-        const nowMin = nowLocalMinutes();
-        if (plan.hard_stop_outside_window && !isWithinWindow(nowMin, plan.window_start_min, plan.window_end_min)) {
-          const msg = `Envio pausado: fora da janela em ${nowHHMM()}.`;
-          console.log('[PLAN]', msg);
-          broadcast({ type: 'send_progress', total: recipientList.length, current: i, step: 'paused', message: msg });
-          break;
-        }
-
-        broadcast({ type: 'send_progress', total: recipientList.length, current: progressCurrent, recipient });
-
-        try {
-          const parsed = normalizeRecipientToTarget(recipient);
-          if (!parsed) {
-            errorCount++;
-            errors.push({ recipient, error: 'Destinatário inválido' });
-            continue;
-          }
-
-          const vars = entry.vars || {};
-          const mergedVars = { ...vars };
-
-          if (!mergedVars.telefone) mergedVars.telefone = recipient;
-
-          let finalMessage = messageRaw;
-
-          if (parsed.type === 'number') {
-            finalMessage = applyTemplateVars(finalMessage, mergedVars);
-
-            // ✅ resolve WID
-            const wid = await resolveNumberToWid(recipient);
-
-            console.log(`[SEND] number raw="${recipient}" -> wid="${wid}"`);
-            await sendMessageWithTimeout(wid, finalMessage, file);
-            successCount++;
-          } else {
-            const chats = await getChatsCached();
-            const group = chats.find(chat => chat.isGroup && chat.name === parsed.groupName);
-            if (!group) {
-              errorCount++;
-              errors.push({ recipient, error: `Grupo não encontrado: ${parsed.groupName}` });
-            } else {
-              mergedVars.grupo = parsed.groupName;
-              finalMessage = applyTemplateVars(finalMessage, mergedVars);
-              await sendMessageWithTimeout(group.id._serialized, finalMessage, file);
-              successCount++;
-            }
-          }
-
-        } catch (sendError) {
-          const errorMsg = sendError?.message || String(sendError);
-          errorCount++;
-          errors.push({ recipient, error: errorMsg });
-        }
-
-        // 2) Delay humano entre envios + pausa longa por lote
-        const isLast = i >= recipientList.length - 1;
-        if (!isLast) {
-          // pausa longa a cada X mensagens (ex: 25)
-          if (shouldTakeLongBreak(progressCurrent, plan)) {
-            const longBreak = pickLongBreakMs(plan);
-            console.log(`[PLAN] long break after ${progressCurrent} msgs -> ${longBreak}ms`);
-            broadcast({
-              type: 'send_break',
-              kind: 'long',
-              after: progressCurrent,
-              waitMs: longBreak
-            });
-            await sleep(longBreak);
-          } else {
-            const dms = pickDelayMs(plan);
-            broadcast({
-              type: 'send_break',
-              kind: 'short',
-              after: progressCurrent,
-              waitMs: dms
-            });
-            await sleep(dms);
-          }
-        }
-      }
-
-      broadcast({
-        type: 'send_progress',
-        total: recipientList.length,
-        current: recipientList.length,
-        step: 'completed',
-        success: successCount,
-        errors: errorCount
-      });
-    });
-
-    // ✅ responde imediatamente (o envio continua na fila)
-    const endTime = new Date();
-    const duration = endTime - startTime;
-
-    return res.status(200).json({
-      status: 'success',
-      message: `Envio enfileirado! Sucesso (até agora): ${successCount}, Erros (até agora): ${errorCount}`,
-      stats: { success: successCount, errors: errorCount, duration },
-      plan,
-      errors: errors.slice(0, 10)
-    });
-
-  } catch (err) {
-    const msg = err?.message || String(err);
-    console.log('[ERR] /api/send:', msg);
-
-    const low = msg.toLowerCase();
-    if (low.includes('session closed') || low.includes('target closed') || low.includes('browser') || low.includes('protocol error')) {
-      restartClient({ reason: 'send_failure_browser', wipeSession: false, doLogout: false }).catch(() => {});
-    }
-
-    return res.status(500).json({ status: 'error', message: 'Erro ao processar o envio.', error: msg });
-  }
-});
-
-app.get('/api/sendMessage/:recipient/:message', async (req, res) => {
-  try {
-    await assertConnectedOrThrow();
-
-    const recipientParam = (req.params.recipient || '').trim();
-    const message = normalizeNewlines(decodeURIComponent(req.params.message || ''));
-
-    if (!recipientParam) return res.status(400).json({ status: 'error', message: 'recipient obrigatório' });
-
-    let target = normalizeRecipientToTarget(recipientParam);
-    if (!target) return res.status(400).json({ status: 'error', message: 'recipient inválido' });
-
-    let chatId = null;
-
-    if (target.type === 'number') {
-      chatId = await resolveNumberToWid(recipientParam);
-    } else {
-      const chats = await waState.client.getChats();
-      const group = chats.find(chat => chat.isGroup && chat.name === target.groupName);
-      if (!group) return res.status(404).json({ status: 'error', message: `Grupo "${target.groupName}" não encontrado.` });
-      chatId = group.id._serialized;
-    }
-
-    await enqueueSend(async () => { await sendMessageWithTimeout(chatId, message, null); });
-
-    return res.status(200).json({ status: 'success', message: 'Mensagem enfileirada/enviada!' });
-  } catch (err) {
-    const msg = err?.message || String(err);
-    console.log('[ERR] /api/sendMessage:', msg);
-
-    const low = msg.toLowerCase();
-    if (low.includes('session closed') || low.includes('target closed') || low.includes('browser') || low.includes('protocol error')) {
-      restartClient({ reason: 'sendMessage_failure_browser', wipeSession: false, doLogout: false }).catch(() => {});
-    }
-
-    return res.status(500).json({ status: 'error', message: 'Erro ao enviar mensagem.', error: msg });
-  }
-});
-
 app.listen(port, () => {
   console.log(`[HTTP] API rodando na porta ${port}`);
   console.log(`[WS] WS rodando na porta ${wsPort}`);
 });
 
-async function shutdown(sig) {
-  console.log(`[SYS] shutdown (${sig})`);
-  stopWatchdog();
+// graceful shutdown
+async function shutdown() {
+  try { stopWatchdog(); } catch {}
+  try {
+    setCanceled(true);
+    sendQueue = [];
+  } catch {}
 
-  try { broadcast({ type: 'shutdown', sig }); } catch {}
-
-  try { await stopClient({ reason: `shutdown:${sig}`, doLogout: false, wipeSession: false }); } catch {}
-  try { wss.close(() => {}); } catch {}
-
+  try { await stopClient({ reason: 'shutdown', wipeSession: false, doLogout: false }); } catch {}
+  try { wss.close(); } catch {}
   process.exit(0);
 }
 
-process.on('SIGINT', () => shutdown('SIGINT'));
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-
-process.on('uncaughtException', (err) => {
-  console.log('[SYS] uncaughtException:', err?.message || err);
-  restartClient({ reason: 'uncaughtException', wipeSession: false, doLogout: false }).catch(() => {});
-});
-
-process.on('unhandledRejection', (err) => {
-  console.log('[SYS] unhandledRejection:', err?.message || err);
-  restartClient({ reason: 'unhandledRejection', wipeSession: false, doLogout: false }).catch(() => {});
-});
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
